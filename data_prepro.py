@@ -16,9 +16,7 @@ import nltk
 
 #%%
     
-path = './de-en/'
-
-
+PATH = './de-en/'
 
 def load_data(path):
     data = []
@@ -26,83 +24,134 @@ def load_data(path):
         for i, line in enumerate(f): 
             example = {}
             
-            # TODO
-            # Strip out the parse information and the phrase labels--- ELiminate the <x> </x> symbols  
-            
-#            text = re.sub(r'\s*(\(\d)|(\))\s*', '', line)
             text = line.strip()
             example['text'] = text[:]
-            data.append(example)
+            
+            if i >= 6:
+                data.append(example)
 
     random.seed(1)
-    random.shuffle(data)
+    random.shuffle(data)  # First 6 lines are not included.
     return data
 
 #%%
-train_de = load_data(path + 'train.tags.de-en.de')
-train_en = load_data(path + 'train.tags.de-en.en')
+train_de = load_data(PATH + 'train.tags.de-en.de')
+train_en = load_data(PATH + 'train.tags.de-en.en')
 
 #%%
+def tokenize_merge(dataset):
 
-max_seq_length = 20
+    corpus = []
 
-def sentence_to_padded_index_sequence(datasets):
-    '''
-    Annotates datasets with feature vectors.
+    for tt in dataset:
+
+        sentence = tt['text']
+        tokens = nltk.word_tokenize(sentence)
+
+        corpus.append(" ".join(tokens))
+
+    return " \n".join(corpus)
+
+
+corpus_en = tokenize_merge(train_en)
+with open("tokenized_en.txt", "w") as f:
+    f.write(corpus_en)
+
+
+corpus_de = tokenize_merge(train_de)
+with open("tokenized_de.txt", "w") as f:
+    f.write(corpus_de)
     
-    @param
-    datasets: list of datasets
     
-    '''
+#%%
+def get_vocab_mapping(data_file):
     
-    START = "<S>"
-    END = "<EOS>"
-    END_PADDING = "<PAD>"
-    UNKNOWN = "<UNK>"
-    SEQ_LEN = max_seq_length + 1
-    
-    # Extract vocabulary
-    def tokenize(string):
-        return string.split()
+#    START = "<S>"
+#    END = "<EOS>"
+#    END_PADDING = "<PAD>"
+#    UNKNOWN = "<UNK>"
     
     word_counter = collections.Counter()
-    for example in datasets[0]:
-        word_counter.update(tokenize(example['text']))
     
-    # Only enter word into vocabulary if it appears > 0 times. Add special symbols to vocabulary.
+    with open(data_file) as f:
+        for line in f:
+            word_counter.update(line.split())
+    
     vocabulary = set([word for word in word_counter if word_counter[word] > 0]) 
     vocabulary = list(vocabulary)
-    vocabulary = [START, END, END_PADDING, UNKNOWN] + vocabulary
+#    vocabulary = [START, END, END_PADDING, UNKNOWN] + vocabulary
         
     word_indices = dict(zip(vocabulary, range(len(vocabulary))))
     indices_to_words = {v: k for k, v in word_indices.items()}
-        
-#    for i, dataset in enumerate(datasets):
-#        for example in dataset:
-#            example['index_sequence'] = torch.zeros((SEQ_LEN))
-#            
-#            token_sequence = [START] + tokenize(example['text']) + [END]
-#
-#            for i in range(SEQ_LEN):
-#                if i < len(token_sequence):
-#                    if token_sequence[i] in word_indices:
-#                        index = word_indices[token_sequence[i]]
-#                    else:
-#                        index = word_indices[UNKNOWN]
-#                else:
-#                    index = word_indices[END_PADDING]
-#                example['index_sequence'][i] = index
-#                
-#            example['target_sequence'] = example["index_sequence"][1:]
-#            example['index_sequence'] = example['index_sequence'].long().view(1,-1)
-#            example['target_sequence'] = example['target_sequence'].long().view(1,-1)
-            
-    return indices_to_words, word_indices
+    
+    return indices_to_words, word_indices, vocabulary
 
+
+id2w_en, w2id_en, vocab_en = get_vocab_mapping("tokenized_en.txt")
+id2w_de, w2id_de, vocab_de = get_vocab_mapping("tokenized_de.txt")
+
+
+#%%    
+
+def text2idx(data_file, w_id):
+    
+    idx_corpus = []
+    
+    with open(data_file) as f:
+    
+        for i, line in enumerate(f):
+            
+            row = []
+            
+            line = line.replace(u'\xa0', u' ')
+            line = line.replace(u'\x85', u' ')
+    
+            tokens = line.split(' ')[:-1]
+            tokens = list(filter(lambda x: len(x) > 0, tokens))
+
+            for token in tokens:
+                
+                idx = w_id[token]
+                row.append(idx)
+
+            idx_corpus.append(' '.join([str(i) for i in row]))
+
+    return ' \n'.join(idx_corpus)
+
+# Processed corpus with index representation
+trn_en = text2idx("tokenized_en.txt", w2id_en)
+with open("train_idx_en.txt", "w") as f:
+    f.write(trn_en)
+
+trn_de = text2idx("tokenized_de.txt", w2id_de)
+with open("train_idx_de.txt", "w") as f:
+    f.write(trn_de)
+
+######################################################
+######################################################
 
 #%%
-id2w_en, w2id_en = sentence_to_padded_index_sequence([train_en])
-id2w_de, w2id_de = sentence_to_padded_index_sequence([train_de])
+    
+def get_max_seq_len(dataset):
+    
+    '''
+    Return the longest sentence in the training english set
+    '''
+
+    seq_len = []
+    
+    for tt in dataset:
+        
+        sentence = tt['text']
+        tokens = nltk.word_tokenize(sentence)
+        length = len(tokens)
+        
+        seq_len.append(length)
+        
+    return max(seq_len)
+
+# get_max_seq_len(train_en)
+
 
 
 #%%
@@ -133,61 +182,3 @@ def get_batch(batch):
         vectors.append(d["index_seq"])
         targets.append(d["target_seq"])
     return vectors, targets
-
-#%%
-    
-def get_max_seq_len(dataset):
-    
-    '''
-    Return the longest sentence in the training english set
-    '''
-
-    seq_len = []
-    
-    for tt in dataset:
-        
-        sentence = tt['text']
-        tokens = nltk.word_tokenize(sentence)
-        length = len(tokens)
-        
-        seq_len.append(length)
-        
-    return max(seq_len)
-
-# get_max_seq_len(train_en)
-    
-#%%    
-
-def text2idx(dataset, w_id):
-    
-    lines = []
-    
-    for tt in dataset:
-        
-        line = []
-        
-        sentence = tt['text']
-        sentence = sentence.replace(u'\xa0', u' ')
-        sentence = sentence.replace(u'\x85', u' ')
-
-        tokens = sentence.split(' ')
-        
-        for word in tokens:
-            
-            idx = w_id[word]
-            line.append(idx)
-            
-#        lines.append(' '.join(lines) )
-        lines.append(line)
-        
-    return lines
-
-#%%
-#trn_en = text2idx(train_en[:], w2id_en)
-trn_de = text2idx(train_de[:], w2id_de)
-
-#trn_en.to_pickle('training_en.pkl')
-#trn_de.to_pickle('training_de.pkl')
-#%%
-            
-   
