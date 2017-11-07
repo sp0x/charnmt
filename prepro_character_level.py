@@ -2,8 +2,8 @@
 """
 @Author: Viola
 
-This module preprocess the dataset before passed into the model.
-It convert the sentences with words to sequences with mapped indices.
+This module pre-processes the datasets before passed into the model.
+It maps the de-en sentence pairs with tokenized words to sequences.
 
 """
 
@@ -27,15 +27,17 @@ def load_data(path):
     with open(path) as f:
         for i, line in enumerate(f): 
             example = {}
+
+            if line.startswith('<'):
+                continue
             
             text = line.strip()
             example['text'] = text[:]
-            
-            if i >= 6:
-                data.append(example)
+
+            data.append(example)
 
     random.seed(1)
-    random.shuffle(data)  # First 6 lines are not included.
+    random.shuffle(data)
     return data
 
 #%%
@@ -63,6 +65,3 @@ def build_corpus(dataset_from, dataset_to):
 corpus_from_to = build_corpus(train_de, train_en)
 with open("DATA_processed.txt", "w") as f:
     f.write(corpus_from_to)
-
-    
-    
