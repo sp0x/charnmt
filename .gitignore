@@ -1,0 +1,6 @@
+data/de-en
+*.tgz
+*.zip
+*.pyc
+src/.DS_Store
+src/__pycache__
