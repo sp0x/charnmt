@@ -16,7 +16,7 @@ import nltk
 
 #%%
     
-with open("train.txt", "r", encoding="utf8") as f:
+with open("../data/train.txt", "r", encoding="utf8") as f:
     
     DE_seq = []
     EN_seq = []
@@ -32,7 +32,7 @@ with open("train.txt", "r", encoding="utf8") as f:
 def mapper(sequence):
     
     corpus = ' '.join(sequence)
-    vocab = []
+    vocab = ['<PAD>', '<EOS>', '<UNK>']
 
     for i in corpus:
         if i not in vocab:
