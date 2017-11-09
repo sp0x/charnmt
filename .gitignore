@@ -3,5 +3,6 @@ data/*
 *.zip
 *.pyc
 */.DS_Store
+*.DS_Store
 src/__pycache__
 src/.spyproject
