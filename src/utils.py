@@ -16,11 +16,12 @@ def build_char_vocab(filename):
     ----------
     """
     vocab = {
-            "<PAD>" : 0, 
-            "<EOS>" : 1, 
-            "<UNK>" : 2,
+            "<PAD>" : 0,
+            "<SOS>" : 1,
+            "<EOS>" : 2, 
+            "<UNK>" : 3,
             }
-    idx2char = ["<PAD>", "<EOS>", "<UNK>"]
+    idx2char = ["<PAD>", "<SOS>", "<EOS>", "<UNK>"]
     with open(filename, "r", encoding="utf-8") as f:
         for line in f:
             source, target = line.split("<JOIN>")
@@ -52,14 +53,15 @@ def load_data(filename, vocab, save_path):
     if os.path.exists(save_path+"/source.p"):
         source_seqs = pickle.load(open(save_path+"/source.p", "rb"))
         target_seqs = pickle.load(open(save_path+"/target.p", "rb"))
+        
         return source_seqs, target_seqs
 
     source_seqs = []
     target_seqs = []
     with open(filename, "r", encoding="utf-8") as f:
         for line in f:
-            source_seq = []
-            target_seq = []
+            source_seq = [vocab["<SOS>"]]
+            target_seq = [vocab["<SOS>"]]
 
             source, target = line.split("<JOIN>")
             source = source[:-5].strip()

@@ -31,8 +31,8 @@ class Encoder(nn.Module):
 
         # half convolution with 8-grams
         self.n_filters = [200, 200, 250, 250, 300, 300, 300, 300]
-        for i in range(len(n_filters)):
-            conv2d = nn.Conv2d(1, n_filters[i], (i+1, src_emb), padding=(i, 0))
+        for i in range(len(self.n_filters)):
+            conv2d = nn.Conv2d(1, self.n_filters[i], (i+1, src_emb), padding=(i, 0))
             setattr(self, "conv_layer{}".format(i+1), conv2d)
 
         # number of layers in highway network
@@ -95,8 +95,8 @@ class Encoder(nn.Module):
         seq_len = x.size(1)
         Y = []
         for i in range(self.n_filters):
-            y = getattr(self."conv_layer{}".format(i+1))(x)
-            y = F.relu(y[:,:seq_len,:])
+            y = getattr(self, "conv_layer{}".format(i+1))(x)
+            y = F.relu(y[:, :seq_len, :])
             Y.append(y.view(batch_size, self.n_filters[i], seq_len))
 
         Y = torch.cat(Y, 1)
