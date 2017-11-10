@@ -131,6 +131,7 @@ class Encoder(nn.Module):
         ----------
         """
         y = x
+
         for i in range(self.n_highway):
             g = F.sigmoid(getattr(self, "highway_gate{}".format(i+1))(y))
             relu = F.relu(getattr(self, "highway_layer{}".format(i+1)(y)))
@@ -160,7 +161,7 @@ class Encoder(nn.Module):
         batch_size = 1
         h = self.init_gru(batch_size)
         x = Variable(torch.zeros(batch_size, seq_len))
-        c = self(x, h)
+        c = self.forward(x, h)
         dim = c.size(2)
         return dim
 
@@ -303,9 +304,9 @@ class CharNMT(nn.Module):
 
     def __init__(self, 
             vocab_size, 
-            max_len=450
+            max_len=450,
             src_emb=128, 
-            tar_emb=512
+            tar_emb=512,
             hid_dim=300, 
             dropout=0.5, 
             s=5, 
@@ -320,7 +321,7 @@ class CharNMT(nn.Module):
 
         context_dim = self.encoder.get_context_dim(max_len)
         self.decoder = Decoder(tar_emb, hid_dim, vocab_size, context_dim, 
-                dropout, n_rnn_layers, decoder_layers)
+                dropout, n_rnn_decoder_layers, decoder_layers)
 
 
     def init_hidden(self, batch_size):
@@ -329,11 +330,26 @@ class CharNMT(nn.Module):
         return enc_h, dec_h
 
 
-    def compute_context(self, x):
-        return self.encoder(x)
+    def compute_context(self, x, batch_size):
+        h = self.encoder.init_gru(batch_size)
+        return self.encoder(x, h)
 
 
     def forward(self, x, c, dec_h):
+        '''
+        encode, attention, decode
+        ----------
+        @params
+            x    :  previously generated characters
+            c    :  tensor, context-dependent vectors, with dimension 
+                    (batch_size, seq_len, feature)
+            dec_h:  tensor, hidden state at time t-1 in the decoding procedure, 
+                    with dimention (batch_size, hid_dim)
+            
+        @return
+            char at time t and hidden state in decoder at time t
+        ----------
+        '''
         seq_len = x.size(1)
         for i in range(seq_len):
             next_char, dec_h = self.decoder(dec_h, x[:,i], c)
