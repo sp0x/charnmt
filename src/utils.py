@@ -1,5 +1,7 @@
 import pickle
 import os
+import random
+import numpy as np
 
 
 def build_char_vocab(filename):
@@ -35,7 +37,7 @@ def build_char_vocab(filename):
     return vocab, idx2char
 
 
-def load_data(filename, vocab, save_path):
+def load_data(filename, vocab, save_path, max_len):
     """
     Load source and target language sequences, each list contains a list of 
     character indices converted from vocabulary
@@ -66,20 +68,77 @@ def load_data(filename, vocab, save_path):
             source, target = line.split("<JOIN>")
             source = source[:-5].strip()
             target = target[:-5].strip()
+            
+            if len(source) <= max_len:
+  
+                for c in source:
+                    source_seq.append(vocab[c])
+                source_seq.append(vocab["<EOS>"])
+    
+                for c in target:
+                    target_seq.append(vocab[c])
+                target_seq.append(vocab["<EOS>"])
 
-            for c in source:
-                source_seq.append(vocab[c])
-            source_seq.append(vocab["<EOS>"])
-
-            for c in target:
-                target_seq.append(vocab[c])
-            target_seq.append(vocab["<EOS>"])
-
-            source_seqs.append(source_seq)
-            target_seqs.append(target_seq)
+                source_seqs.append(source_seq)
+                target_seqs.append(target_seq)
 
     pickle.dump(source_seqs, open(save_path + "/source.p", "wb"))
     pickle.dump(target_seqs, open(save_path + "/target.p", "wb"))
 
     return source_seqs, target_seqs
+
+
+
+def batchify(data, label, stride, batch_size=None, shuffle=False):
+    
+    if not batch_size:
+        batch_size = len(data)
+
+    data_size = len(data)
+    order = list(range(data_size))
+    if shuffle:
+        random.shuffle(order)
+
+    num_batches = int(np.ceil(1.*data_size / batch_size))
+    
+    for i in range(num_batches):
+        
+        start = i * batch_size
+        indices = order[start: start+batch_size]
+        padded_data = padding(data[indices], stride)
+        
+        yield padded_data, label[indices]
+
+            
+            
+
+def padding(batch_data, stride):
+    """
+    For source sequence data in a batch, 
+    zero-pad the short ones up to the multiples of stride
+    
+    ----------
+    @param 
+        batch_data: numpy array, has dimension (batch_size, seq_len, n_feature)
+        stride: int, stride size
+        
+    @return 
+        padded_data: numpy array, same format as batch_data, but padded
+    ----------
+    """
+    lens = [data.shape[0] for data in batch_data]
+    max_len = max(lens)
+    max_len += stride - (max_len % stride)
+
+    batch_size = len(batch_data)
+    nfeature = batch_data[0].shape[1]
+    padded_data = np.zeros([batch_size, max_len, nfeature])
+    
+    for i in range(batch_size):
+        length = batch_data[i].shape[0]
+        pad = np.pad(batch_data[i], (0, max_len-length), "constant")
+        padded_data[i] = pad[:, :nfeature]
+
+    return padded_data
+    
 

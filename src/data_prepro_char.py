@@ -25,12 +25,7 @@ It maps the de-en sentence pairs with tokenized words to sequences.
 
 """
 
-import re
 import random
-import collections
-import torch
-import numpy as np
-import nltk
 
 #%%
 unk = '变'
