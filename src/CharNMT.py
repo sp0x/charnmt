@@ -159,17 +159,6 @@ class Encoder(nn.Module):
         return output
 
 
-    """
-    def get_context_dim(self, seq_len):
-        batch_size = 1
-        h = self.init_gru(batch_size)
-        x = Variable(torch.zeros(batch_size, seq_len))
-        c = self.forward(x, h)
-        dim = c.size(2)
-        return dim
-    """
-
-
 class Decoder(nn.Module):
     """
     Decoder of the character-level NMT model, with attention mechanism. Predict 
@@ -237,7 +226,8 @@ class Decoder(nn.Module):
         y = self.embedding(prev_y.long())
 
         # attention mechanism
-        prev_h = prev_s.transpose(0,1).contiguous().view(1,-1)
+        batch_size = y.size(0)
+        prev_h = prev_s.transpose(0,1).contiguous().view(batch_size, -1)
         context = self._attention(prev_h, y, z)
 
         # update memory cell
@@ -331,7 +321,6 @@ class CharNMT(nn.Module):
         self.encoder = Encoder(src_emb, hid_dim, vocab_size, dropout, 
                 s, n_highway, n_rnn_encoder_layers)
 
-        #context_dim = self.encoder.get_context_dim(max_len)
         self.decoder = Decoder(tar_emb, hid_dim, vocab_size, hid_dim * 2, 
                 dropout, n_rnn_decoder_layers, decoder_layers)
 

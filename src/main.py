@@ -10,6 +10,13 @@ import utils
 from CharNMT import CharNMT
 
 
+def loss_in_batch(output, label, mask, loss_fn):
+    loss = 0
+    for i in range(len(output)):
+        loss += loss_fn(output[i:i+1], label[i:i+1]) * mask[i]
+    return loss
+
+
 def train(model, source, target, lr, conf):
     model.train()
     opt = optim.Adam(model.parameters(), lr=lr)
@@ -18,7 +25,7 @@ def train(model, source, target, lr, conf):
     total_loss = 0
     data_size = len(source)
 
-    for batch, (x, y, seq_len) in enumerate(utils.batchify(
+    for batch, (x, y, mask) in enumerate(utils.batchify(
         source, target, conf.stride, conf.batch_size, True)):
         batch_size, max_len = x.shape
         x = Variable(torch.Tensor(x.tolist()), volatile=False)
@@ -29,11 +36,10 @@ def train(model, source, target, lr, conf):
         batch_loss = 0
 
         context = model.compute_context(x, enc_h)
-        for i in range(batch_size):
-            h = dec_h[:,i:i+1,:]
-            for j in range(1, seq_len[i]):
-                next_char, h = model(y[i:i+1,j-1], context[i:i+1], h)
-                batch_loss += loss_fn(next_char, y[i:i+1,j]) / batch_size
+        for i in range(1, y.size(1)):
+            next_char, dec_h = model(y[:,i-1], context, dec_h)
+            batch_loss += loss_in_batch(next_char, y[:,i], mask[:,i], loss_fn)
+        batch_loss /= batch_size
 
         batch_loss.backward()
         opt.step()
@@ -50,12 +56,12 @@ def train(model, source, target, lr, conf):
 
 def evaluate(model, source, target, conf):
     model.eval()
-    loss_fn = nn.NLLLoss()
+    loss_fn = nn.CrossEntropyLoss()
 
     total_loss = 0
     data_size = len(source)
 
-    for batch, (x, y, seq_len) in enumerate(utils.batchify(
+    for batch, (x, y, mask) in enumerate(utils.batchify(
         source, target, conf.stride, conf.batch_size)):
         batch_size, max_len = x.shape
         x = Variable(torch.Tensor(x.tolist()), volatile=True)
@@ -65,13 +71,11 @@ def evaluate(model, source, target, conf):
         batch_loss = 0
 
         context = model.compute_context(x, enc_h)
-        for i in range(batch_size):
-            h = dec_h[:,i:i+1,:]
-            for j in range(1, seq_len[i]):
-                next_char, h = model(y[i:i+1,j-1], context[i:i+1], h)
-                batch_loss += loss_fn(next_char, y[i:i+1,j]) / batch_size
+        for i in range(1, y.size(1)):
+            next_char, dec_h = model(y[:,i-1], context, dec_h)
+            batch_loss += loss_in_batch(next_char, y[:,i], mask[:,i], loss_fn)
 
-        total_loss += batch_loss.data[0] * batch_size
+        total_loss += batch_loss.data[0]
 
     return total_loss / data_size
 
@@ -88,9 +92,9 @@ def main():
             conf.reverse_source)
 
     if conf.debug_mode:
-        size = 40
-        train_source_seqs = train_source_seqs[:size]
-        train_target_seqs = train_target_seqs[:size]
+        debug_size = int(conf.batch_size * 1.5)
+        train_source_seqs = train_source_seqs[:debug_size]
+        train_target_seqs = train_target_seqs[:debug_size]
 
     # Define model
     model = CharNMT(len(vocab), 
