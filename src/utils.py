@@ -37,7 +37,7 @@ def build_char_vocab(filename):
     return vocab, idx2char
 
 
-def load_data(filename, vocab, save_path, max_len):
+def load_data(filename, vocab, save_path, max_len, reverse_source):
     """
     Load source and target language sequences, each list contains a list of 
     character indices converted from vocabulary
@@ -46,15 +46,29 @@ def load_data(filename, vocab, save_path, max_len):
     @params
         filename: string, input file path
         vocab: dict, the vocabulary generated from a large corpora
+        save_path: string, the location where the pickled data is
+        max_len: int, the maximum source sequence length, used to filter longer 
+            sequences
+        reverse_source: bool, reverse the source sentence order, which may 
+            improve the final performance of machine translation
 
     @return
         source_seqs: list, a list of source language sentence
         target_seqs: list, a list of target language sentence
     ----------
     """
+
+    def reverse_order(seq):
+        for i in range(len(seq)):
+            seq[i] = list(reversed(seq[i]))
+        return seq
+
     if os.path.exists(save_path+"/source.p"):
         source_seqs = pickle.load(open(save_path+"/source.p", "rb"))
         target_seqs = pickle.load(open(save_path+"/target.p", "rb"))
+
+        if reverse_source:
+            source_seqs = reverse_order(source_seqs)
         
         return source_seqs, target_seqs
 
@@ -84,6 +98,9 @@ def load_data(filename, vocab, save_path, max_len):
 
     pickle.dump(source_seqs, open(save_path + "/source.p", "wb"))
     pickle.dump(target_seqs, open(save_path + "/target.p", "wb"))
+
+    if reverse_source:
+        source_seqs = reverse_order(source_seqs)
 
     return source_seqs, target_seqs
 

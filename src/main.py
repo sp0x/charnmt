@@ -84,7 +84,8 @@ def main():
             conf.train_path, 
             vocab, 
             conf.data_path,
-            conf.max_seq_len)
+            conf.max_seq_len, 
+            conf.reverse_source)
 
     if conf.debug_mode:
         size = 40

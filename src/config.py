@@ -20,5 +20,6 @@ class Config(object):
     batch_size = 32
     lr = 0.001
     log_interval = 100
+    reverse_source = False
 
     debug_mode = True
