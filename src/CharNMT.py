@@ -37,15 +37,15 @@ class Encoder(nn.Module):
 
         # number of layers in highway network
         self.n_highway = n_highway
-        highway_dim = input_len / s
+        highway_dim = sum(self.n_filters)
         for i in range(n_highway):
             setattr(self, "highway_gate{}".format(i+1), nn.Linear(highway_dim, highway_dim))
             setattr(self, "highway_layer{}".format(i+1), nn.Linear(highway_dim, highway_dim))
 
         # recurrent layer
         self.n_rnn_layers = n_rnn_layers
-        self.rnn_encoder = nn.GRU(src_emb, hid_dim, self.n_rnn_layers, batch_first=True, 
-                dropout=dropout, bidirectional=True)
+        self.rnn_encoder = nn.GRU(highway_dim, hid_dim, self.n_rnn_layers, 
+                batch_first=True, dropout=dropout, bidirectional=True)
 
         self._init_weights()
 
@@ -64,6 +64,7 @@ class Encoder(nn.Module):
         x = self.embedding(x.long())
 
         # Convoluation
+        x = torch.unsqueeze(x, 1)
         x = self._convolution(x)
 
         # Max pooling with stride
@@ -92,15 +93,16 @@ class Encoder(nn.Module):
         ----------
         """
         batch_size = x.size(0)
-        seq_len = x.size(1)
+        seq_len = x.size(2)
         Y = []
-        for i in range(self.n_filters):
+        for i in range(len(self.n_filters)):
             y = getattr(self, "conv_layer{}".format(i+1))(x)
-            y = F.relu(y[:, :seq_len, :])
-            Y.append(y.view(batch_size, self.n_filters[i], seq_len))
+            y = F.relu(y[:,:,:seq_len,:])
+            y = y.view(batch_size, self.n_filters[i], seq_len)
+            Y.append(y)
 
         Y = torch.cat(Y, 1)
-        return Y
+        return Y.transpose(1, 2)
 
 
     def _max_pooling(self, x):
@@ -134,7 +136,7 @@ class Encoder(nn.Module):
 
         for i in range(self.n_highway):
             g = F.sigmoid(getattr(self, "highway_gate{}".format(i+1))(y))
-            relu = F.relu(getattr(self, "highway_layer{}".format(i+1)(y)))
+            relu = F.relu(getattr(self, "highway_layer{}".format(i+1))(y))
             y = g * relu + (1-g) * y
 
         return y
@@ -157,6 +159,7 @@ class Encoder(nn.Module):
         return output
 
 
+    """
     def get_context_dim(self, seq_len):
         batch_size = 1
         h = self.init_gru(batch_size)
@@ -164,6 +167,7 @@ class Encoder(nn.Module):
         c = self.forward(x, h)
         dim = c.size(2)
         return dim
+    """
 
 
 class Decoder(nn.Module):
@@ -188,7 +192,7 @@ class Decoder(nn.Module):
         self.embedding = nn.Embedding(vocab_size, tar_emb)
         
         # single-layer attention score network
-        attention_feature_dim = hid_dim + tar_emb + context_dim
+        attention_feature_dim = hid_dim * 2 + tar_emb + context_dim
         self._align = nn.Linear(attention_feature_dim, 1)
 
         # decoder network from attention
@@ -201,7 +205,7 @@ class Decoder(nn.Module):
         self.n_rnn_layers = n_rnn_layers
         input_dim = tar_emb + context_dim
         self.rnn_decoder = nn.GRU(input_dim, hid_dim, self.n_rnn_layers, 
-                batch_first=True, dropout=dropout)
+                batch_first=True, dropout=dropout, bidirectional=True)
 
         self._init_weights()
 
@@ -221,7 +225,7 @@ class Decoder(nn.Module):
 
         @params
             prev_s: tensor, hidden state at time t-1 in the decoding procedure, 
-                    with dimention (batch_size, hid_dim)
+                    with dimention (n_layer*n_direction, batch_size, hid_dim)
             prev_y: list of int, indices of previous characters at time t-1
             z: tensor, context-dependent vectors, with dimension (batch_size, 
                seq_len, feature)
@@ -233,10 +237,12 @@ class Decoder(nn.Module):
         y = self.embedding(prev_y.long())
 
         # attention mechanism
-        context = self._attention(prev_s, y, z)
+        prev_h = prev_s.transpose(0,1).contiguous().view(1,-1)
+        context = self._attention(prev_h, y, z)
 
         # update memory cell
-        output, h = self.rnn_decoder(torch.cat((prev_y, context), 1), prev_s)
+        cat_input = torch.cat((y, context), 1).unsqueeze(1)
+        output, h = self.rnn_decoder(cat_input, prev_s)
 
         # decode
         next_char = self._decode(context)
@@ -266,13 +272,18 @@ class Decoder(nn.Module):
         """
         batch_size, seq_len, dim = z.size()
         c = 0
+        betas = []
         for i in range(seq_len):
             z_i = z[:,i,:]
             x = torch.cat((prev_s, prev_y, z_i), 1)
             beta = F.tanh(self._align(x))
-            alpha = F.softmax(beta)
-            c += alpha * z_i
-        return c
+            betas.append(beta)
+
+        betas = torch.stack(betas, 1)
+        alpha = F.softmax(betas)
+        c = alpha * z
+
+        return c.sum(1)
 
 
     def _decode(self, c):
@@ -315,12 +326,13 @@ class CharNMT(nn.Module):
             n_rnn_decoder_layers=1, 
             decoder_layers=[1024]):
         super(CharNMT, self).__init__()
+        self.name = "CharNMT"
 
         self.encoder = Encoder(src_emb, hid_dim, vocab_size, dropout, 
                 s, n_highway, n_rnn_encoder_layers)
 
-        context_dim = self.encoder.get_context_dim(max_len)
-        self.decoder = Decoder(tar_emb, hid_dim, vocab_size, context_dim, 
+        #context_dim = self.encoder.get_context_dim(max_len)
+        self.decoder = Decoder(tar_emb, hid_dim, vocab_size, hid_dim * 2, 
                 dropout, n_rnn_decoder_layers, decoder_layers)
 
 
@@ -330,9 +342,8 @@ class CharNMT(nn.Module):
         return enc_h, dec_h
 
 
-    def compute_context(self, x, batch_size):
-        h = self.encoder.init_gru(batch_size)
-        return self.encoder(x, h)
+    def compute_context(self, x, enc_h):
+        return self.encoder(x, enc_h)
 
 
     def forward(self, x, c, dec_h):
@@ -350,7 +361,10 @@ class CharNMT(nn.Module):
             char at time t and hidden state in decoder at time t
         ----------
         '''
-        seq_len = x.size(1)
-        for i in range(seq_len):
-            next_char, dec_h = self.decoder(dec_h, x[:,i], c)
-            yield next_char, dec_h
+        next_char, dec_h = self.decoder(dec_h, x, c)
+        return next_char, dec_h
+
+
+    def zero_grads(self):
+        self.encoder.zero_grad()
+        self.decoder.zero_grad()

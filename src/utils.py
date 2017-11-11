@@ -88,11 +88,13 @@ def load_data(filename, vocab, save_path, max_len):
     return source_seqs, target_seqs
 
 
-
 def batchify(data, label, stride, batch_size=None, shuffle=False):
     
     if not batch_size:
         batch_size = len(data)
+
+    data = np.array(data)
+    label = np.array(label)
 
     data_size = len(data)
     order = list(range(data_size))
@@ -105,40 +107,70 @@ def batchify(data, label, stride, batch_size=None, shuffle=False):
         
         start = i * batch_size
         indices = order[start: start+batch_size]
-        padded_data = padding(data[indices], stride)
+
+        padded_data = pad_data(data[indices], stride)
+        padded_label, label_len = pad_label(label[indices])
         
-        yield padded_data, label[indices]
-
-            
+        yield padded_data, padded_label, label_len
             
 
-def padding(batch_data, stride):
+def pad_data(batch_data, stride):
     """
     For source sequence data in a batch, 
     zero-pad the short ones up to the multiples of stride
     
     ----------
     @param 
-        batch_data: numpy array, has dimension (batch_size, seq_len, n_feature)
+        batch_data: numpy array, has dimension (batch_size, seq_len)
         stride: int, stride size
         
     @return 
         padded_data: numpy array, same format as batch_data, but padded
     ----------
     """
-    lens = [data.shape[0] for data in batch_data]
+    lens = [len(data) for data in batch_data]
     max_len = max(lens)
     max_len += stride - (max_len % stride)
 
     batch_size = len(batch_data)
-    nfeature = batch_data[0].shape[1]
-    padded_data = np.zeros([batch_size, max_len, nfeature])
+    n_tokens = len(batch_data[0])
+    padded_data = np.zeros([batch_size, max_len], dtype=np.int32)
     
     for i in range(batch_size):
-        length = batch_data[i].shape[0]
+        length = len(batch_data[i])
         pad = np.pad(batch_data[i], (0, max_len-length), "constant")
-        padded_data[i] = pad[:, :nfeature]
+        padded_data[i] = pad
 
     return padded_data
     
+
+def pad_label(batch_label):
+    """
+    For target sequence data in a batch, 
+    zero-pad the short ones up to the max. length in the batch
+    
+    ----------
+    @param 
+        batch_label: numpy array, has dimension (batch_size, seq_len)
+        
+    @return 
+        padded_label: numpy array, same format as batch_label, but padded
+        label_len: list, indicating each lenght of sequence in a batch
+    ----------
+    """
+    lens = [len(data) for data in batch_label]
+    max_len = max(lens)
+
+    batch_size = len(batch_label)
+    n_tokens = len(batch_label[0])
+    padded_label = np.zeros([batch_size, max_len], dtype=np.int32)
+    label_len = []
+    
+    for i in range(batch_size):
+        length = len(batch_label[i])
+        pad = np.pad(batch_label[i], (0, max_len-length), "constant")
+        padded_label[i] = pad
+        label_len.append(length)
+
+    return padded_label, label_len
 
