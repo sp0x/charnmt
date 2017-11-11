@@ -13,7 +13,7 @@ from CharNMT import CharNMT
 def train(model, source, target, lr, conf):
     model.train()
     opt = optim.Adam(model.parameters(), lr=lr)
-    loss_fn = nn.NLLLoss()
+    loss_fn = nn.CrossEntropyLoss()
 
     total_loss = 0
     data_size = len(source)
