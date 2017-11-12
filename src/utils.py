@@ -126,9 +126,9 @@ def batchify(data, label, stride, batch_size=None, shuffle=False):
         indices = order[start: start+batch_size]
 
         padded_data = pad_data(data[indices], stride)
-        padded_label, label_len = pad_label(label[indices])
+        padded_label, label_mask = pad_label(label[indices])
         
-        yield padded_data, padded_label, label_len
+        yield padded_data, padded_label, label_mask
             
 
 def pad_data(batch_data, stride):
@@ -172,7 +172,8 @@ def pad_label(batch_label):
         
     @return 
         padded_label: numpy array, same format as batch_label, but padded
-        label_len: list, indicating each lenght of sequence in a batch
+        label_mask: numpy array, the padded entries and the first entry 
+            are zeros.
     ----------
     """
     lens = [len(data) for data in batch_label]
@@ -181,13 +182,13 @@ def pad_label(batch_label):
     batch_size = len(batch_label)
     n_tokens = len(batch_label[0])
     padded_label = np.zeros([batch_size, max_len], dtype=np.int32)
-    label_len = []
+    label_mask = np.zeros([batch_size, max_len])
     
     for i in range(batch_size):
         length = len(batch_label[i])
         pad = np.pad(batch_label[i], (0, max_len-length), "constant")
         padded_label[i] = pad
-        label_len.append(length)
+        label_mask[1:length] = 1
 
-    return padded_label, label_len
+    return padded_label, label_mask
 
