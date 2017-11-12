@@ -167,7 +167,7 @@ def main():
     if start_epoch >= 0 and not conf.debug_mode:
         try:
             model = torch.load(save_file)
-            min_loss = evaluate(model, train_source_seqs, train_target_seqs, conf)
+            min_loss = evaluate(model, dev_source_seqs, dev_target_seqs, conf)
             print("Initial validation loss: {:5.6f}".format(min_loss))
         except RuntimeError as e:
             print("[loading existing model error] {}".format(str(e)))
@@ -186,13 +186,18 @@ def main():
             continue
 
         dev_loss = evaluate(model, dev_source_seqs, dev_target_seqs, conf)
-
         print("Validation set\tLoss: {:5.6f}".format(dev_loss))
 
     save_file = os.path.join(conf.save_path, 
             "{}_{}".format(model.name, conf.epochs+start_epoch))
     with open(save_file, "wb") as f:
         torch.save(model, f)
+
+    # Evaluate test set
+    if not conf.debug_mode:
+        test_loss = evaluate(model, test_source_seqs, test_target_seqs, conf)
+        print("Test set loss after {:4d} epochs: {:5.6f}".format(
+            conf.epochs+start_epoch, test_loss))
 
 
 if __name__ == "__main__":
