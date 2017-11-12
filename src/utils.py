@@ -4,7 +4,7 @@ import random
 import numpy as np
 
 
-def build_char_vocab(filename):
+def build_char_vocab(filenames):
     """
     Build character vocabulary from a file
 
@@ -24,29 +24,30 @@ def build_char_vocab(filename):
             "<UNK>" : 3,
             }
     idx2char = ["<PAD>", "<SOS>", "<EOS>", "<UNK>"]
-    with open(filename, "r", encoding="utf-8") as f:
-        for line in f:
-            source, target = line.split("<JOIN>")
-            source = source[:-5].strip()
-            target = target[:-5].strip()
-            for c in source + target:
-                if c not in vocab:
-                    vocab[c] = len(vocab)
-                    idx2char.append(c)
+    for filename in filenames:
+        with open(filename, "r", encoding="utf-8") as f:
+            for line in f:
+                source, target = line.split("<JOIN>")
+                source = source[:-5].strip()
+                target = target[:-5].strip()
+                for c in source + target:
+                    if c not in vocab:
+                        vocab[c] = len(vocab)
+                        idx2char.append(c)
     
     return vocab, idx2char
 
 
-def load_data(filename, vocab, save_path, max_len, reverse_source):
+def load_data(file_path, vocab, pickle_path, max_len, reverse_source):
     """
     Load source and target language sequences, each list contains a list of 
     character indices converted from vocabulary
 
     ----------
     @params
-        filename: string, input file path
+        file_path: string, input file path
         vocab: dict, the vocabulary generated from a large corpora
-        save_path: string, the location where the pickled data is
+        pickle_path: string, the location of the pickled data
         max_len: int, the maximum source sequence length, used to filter longer 
             sequences
         reverse_source: bool, reverse the source sentence order, which may 
@@ -63,9 +64,9 @@ def load_data(filename, vocab, save_path, max_len, reverse_source):
             seq[i] = list(reversed(seq[i]))
         return seq
 
-    if os.path.exists(save_path+"/source.p"):
-        source_seqs = pickle.load(open(save_path+"/source.p", "rb"))
-        target_seqs = pickle.load(open(save_path+"/target.p", "rb"))
+    if os.path.exists(pickle_path.format("source")):
+        source_seqs = pickle.load(open(pickle_path.format("source"), "rb"))
+        target_seqs = pickle.load(open(pickle_path.format("target"), "rb"))
 
         if reverse_source:
             source_seqs = reverse_order(source_seqs)
@@ -74,7 +75,7 @@ def load_data(filename, vocab, save_path, max_len, reverse_source):
 
     source_seqs = []
     target_seqs = []
-    with open(filename, "r", encoding="utf-8") as f:
+    with open(file_path, "r", encoding="utf-8") as f:
         for line in f:
             source_seq = [vocab["<SOS>"]]
             target_seq = [vocab["<SOS>"]]
@@ -96,8 +97,8 @@ def load_data(filename, vocab, save_path, max_len, reverse_source):
                 source_seqs.append(source_seq)
                 target_seqs.append(target_seq)
 
-    pickle.dump(source_seqs, open(save_path + "/source.p", "wb"))
-    pickle.dump(target_seqs, open(save_path + "/target.p", "wb"))
+    pickle.dump(source_seqs, open(pickle_path.format("source"), "wb"))
+    pickle.dump(target_seqs, open(pickle_path.format("target"), "wb"))
 
     if reverse_source:
         source_seqs = reverse_order(source_seqs)

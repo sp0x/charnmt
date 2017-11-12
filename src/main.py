@@ -116,13 +116,34 @@ def get_latest_saver(path, prefix):
 def main():
     # Load data
     conf = Config()
-    vocab, idx2char = utils.build_char_vocab(conf.train_path)
+    vocab, idx2char = utils.build_char_vocab(
+            [conf.train_path, conf.dev_path, conf.test_path])
+    print("vocabulary size = {}".format(len(vocab)))
+
     train_source_seqs, train_target_seqs = utils.load_data(
             conf.train_path, 
             vocab, 
-            conf.data_path,
+            conf.train_pickle,
             conf.max_seq_len, 
             conf.reverse_source)
+    print("{} source and {} target sequences of training set loaded.".format(
+        len(train_source_seqs), len(train_target_seqs)))
+    dev_source_seqs, dev_target_seqs = utils.load_data(
+            conf.dev_path, 
+            vocab, 
+            conf.dev_pickle,
+            conf.max_seq_len, 
+            conf.reverse_source)
+    print("{} source and {} target sequences of validation set loaded.".format(
+        len(dev_source_seqs), len(dev_target_seqs)))
+    test_source_seqs, test_target_seqs = utils.load_data(
+            conf.test_path, 
+            vocab, 
+            conf.test_pickle,
+            conf.max_seq_len, 
+            conf.reverse_source)
+    print("{} source and {} target sequences of test set loaded.".format(
+        len(test_source_seqs), len(test_target_seqs)))
 
     if conf.debug_mode:
         debug_size = int(conf.batch_size * 1.5)

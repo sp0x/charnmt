@@ -5,6 +5,13 @@ class Config(object):
 
     data_path = "../data"
     train_path = data_path + "/train.txt"
+    dev_path = data_path + "/dev.txt"
+    test_path = data_path + "/test.txt"
+    
+    train_pickle = data_path + "/train_{}.p"
+    dev_pickle = data_path + "/dev_{}.p"
+    test_pickle = data_path + "/test_{}.p"
+
     save_path = "saver"
     if not os.path.exists(save_path):
         os.mkdir(save_path)

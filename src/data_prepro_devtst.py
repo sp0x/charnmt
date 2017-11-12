@@ -30,135 +30,80 @@ import os
 import xml.etree.ElementTree as ET
 
 
-#%%
 
-def group_files(dev_tst='dev', de_en='de'):
-    
-    group = []
-    
-    for file in os.listdir("../data/de-en"):
-        if file.endswith('xml'):
-            filename_ls = file.split('.')
-            if filename_ls[2].startswith(dev_tst) and filename_ls[4] == de_en:
-                group.append(file)
-                
-    return group
-            
-
-dev_de = group_files('dev', 'de')
-dev_en = group_files('dev', 'en')
-tst_de = group_files('tst', 'de')
-tst_en = group_files('tst', 'en')
-
-#%%
-
-for xml_file in dev_de:
-    
-    segs = []
-  
-    tree = ET.parse("../data/de-en/" + xml_file).getroot()
-
-    for doc in tree.findall("refset")[0].findall("doc"):
-        seg = doc.findall("seg")
-        for entry in seg:
-            segs.append(entry.text.strip())
-            print(entry.text.strip())
-
-#%%
-file_path = "../data/de-en/IWSLT16.TED.dev2010.de-en.en.xml"
-
-tree = ET.parse(file_path).getroot()
-
-n = 0 
-
-segs = []
-for doc in tree.findall("refset")[0].findall("doc"):
-    seg = doc.findall("seg")
-    for entry in seg:
-        if n > 2000:
-            break
-        segs.append(entry.text.strip())
-        print(entry.text.strip())
-        n += 1
-
-
-
-
-
-
-
-#%%
 unk = '变'
 
-special_token_dict = {'ū':unk,
-             '你':unk,
-             '“':'"',
-             '–':'-',
-             'ë':'e',
-             'É':'E',
-             'ç':'c',
-             'é':'e',
-             'è':'e',
-             'Ç':'C',
-             'ä':'a',
-             '…':'...',
-             'ć':'c',
-             '葱':unk,
-             'ã':'a',
-             'ï':'i',
-             'í':'i',
-             'ê':'e',  
-            'à':'a',
-             '’':"'",
-             'ó':'o',
-             'ī':'i',
-             'á':'a',
-             'ø':'o',
-             '“':'"',
-             'Å':'A',
-             'ñ':'n',
-             '¡':'',
-             'â':'a',
-             '’':"'",
-             '送':unk,
-             'Č':'C',
-             'ô':'o',
-             'ā':'a',
-             '—':'-',
-             '\xa0':' ',
-             '»':'',
-             '‟':'"',
-             'ý':'y',
-             '‚':"'",
-             '\ufeff':' ',
-             '\xad':' ',
-             '\x85':' ',
-             '©':'',
-             '\x8a':' ',
-             'š':'s',
-             '，':',',
-             '›':'',
-             '\x9a':' ',
-             '‹':'',
-             '\x9f':' ',
-             '‒':'-',
-             '™':'',
-             '„':'"',
-             '«':'',
-             'ú':'u',
-             'β':'ß',
-             '´':"'",
-             'к':'k',
-             '®':'',
-             '\x96':' ',
-             'œ':'oe',
-             '\x94':' ',
-             'ย':'',
-             '\x80':' ',
-             'ร':'',
-             'อ':'',
-             'ē':'e',
-                         '่':''}
+special_token_dict = {
+        'ū':unk,
+        '你':unk,
+        '“':'"',
+        '–':'-',
+        'ë':'e',
+        'É':'E',
+        'ç':'c',
+        'é':'e',
+        'è':'e',
+        'Ç':'C',
+        'ä':'a',
+        '…':'...',
+        'ć':'c',
+        '葱':unk,
+        'ã':'a',
+        'ï':'i',
+        'í':'i',
+        'ê':'e',  
+        'à':'a',
+        '’':"'",
+        'ó':'o',
+        'ī':'i',
+        'á':'a',
+        'ø':'o',
+        '“':'"',
+        'Å':'A',
+        'ñ':'n',
+        '¡':'',
+        'â':'a',
+        '’':"'",
+        '送':unk,
+        'Č':'C',
+        'ô':'o',
+        'ā':'a',
+        '—':'-',
+        '\xa0':' ',
+        '»':'',
+        '‟':'"',
+        'ý':'y',
+        '‚':"'",
+        '\ufeff':' ',
+        '\xad':' ',
+        '\x85':' ',
+        '©':'',
+        '\x8a':' ',
+        'š':'s',
+        '，':',',
+        '›':'',
+        '\x9a':' ',
+        '‹':'',
+        '\x9f':' ',
+        '‒':'-',
+        '™':'',
+        '„':'"',
+        '«':'',
+        'ú':'u',
+        'β':'ß',
+        '´':"'",
+        'к':'k',
+        '®':'',
+        '\x96':' ',
+        'œ':'oe',
+        '\x94':' ',
+        'ย':'',
+        '\x80':' ',
+        'ร':'',
+        'อ':'',
+        'ē':'e',
+        '':''
+        }
 
 #%%
 def handle_special_tokens(input):
@@ -182,60 +127,80 @@ def handle_special_tokens(input):
             
     return output.strip()
 
+#%%
+
+def group_files(dev_tst='dev', de_en='de'):
+    
+    group = []
+    
+    for file in os.listdir("../data/de-en"):
+        if file.endswith('xml'):
+            filename_ls = file.split('.')
+            if filename_ls[2].startswith(dev_tst) and filename_ls[4] == de_en:
+                group.append(file)
+                
+    return sorted(group)
+            
+
+dev_de = group_files('dev', 'de')
+dev_en = group_files('dev', 'en')
+tst_de = group_files('tst', 'de')
+tst_en = group_files('tst', 'en')
+
+#%%
+
+def parse_xml(xml_file):
+    segs = []
+  
+    tree = ET.parse("../data/de-en/" + xml_file).getroot()
+    lang = xml_file.split(".")[-2]
+    tag = "srcset" if lang == "de" else "refset" 
+
+    for doc in tree.findall(tag)[0].findall("doc"):
+        seg = doc.findall("seg")
+        for entry in seg:
+            text = handle_special_tokens(entry.text)
+            segs.append(text)
+    
+    return segs
+
+
+def parse_xml_list(filelist):
+    seg_list = []
+    for f in filelist:
+        segs = parse_xml(f)
+        seg_list += segs
+    return seg_list
+
+
+dev_de_list = parse_xml_list(dev_de)
+dev_en_list = parse_xml_list(dev_en)
+tst_de_list = parse_xml_list(tst_de)
+tst_en_list = parse_xml_list(tst_en)
+
+print("dev_de\t{}\ndev_en\t{}\ntst_de\t{}\ntst_en\t{}".format(
+    len(dev_de_list), len(dev_en_list), len(tst_de_list), len(tst_en_list)))
 
 
 #%%
-    
-PATH = '../data/de-en/'
 
 END = "<EOS>"
-END_PADDING = "<PAD>"
-UNKNOWN = "<UNK>"
+JOIN = "<JOIN>"
 
-def load_data(path):
-    data = []
-    with open(path, 'r',  encoding="utf8") as f:
-        for i, line in enumerate(f): 
-            example = {}
+PATH = '../data'
+dev_file = PATH + '/dev.txt'
+tst_file = PATH + '/test.txt'
 
-            if line[0] == '<' and line[-1] == '>':
-                continue
-            
-            line = handle_special_tokens(line)
-            
-            text = line.strip()
-            example['text'] = text[:]
+def join(src, tgt, save_path):
+    assert len(src) == len(tgt), \
+            "Lengths of source and target sentences must be the same."
 
-            data.append(example)
-
-    random.seed(1)
-    random.shuffle(data)
-    return data
-
-#%%
-train_de = load_data(PATH + 'train.tags.de-en.de')
-train_en = load_data(PATH + 'train.tags.de-en.en')
-
-#%%
-def build_corpus(dataset_from, dataset_to):
-
-    corpus = []
-
-    for i, (tt_from, tt_to) in enumerate(zip(dataset_from, dataset_to)):
-
-        tokens_from = [tt_from['text']] + [END]
-        tokens_to = [tt_to['text']] + [END]
-
-        s_from = " ".join(tokens_from)
-        s_to = " ".join(tokens_to)
-        
-        corpus.append("<JOIN>".join([s_from, s_to]))
-
-    return " \n".join(corpus)
+    with open(save_path, "w") as f:
+        for i in range(len(src)):
+            content = src[i] + END + JOIN + tgt[i] + END
+            f.write(content + "\n")
 
 
-corpus_from_to = build_corpus(train_de, train_en)
+join(dev_de_list, dev_en_list, dev_file)
+join(tst_de_list, tst_en_list, tst_file)
 
-with open("../data/train.txt", "w") as f:
-    f.write(corpus_from_to)
-    
