@@ -4,6 +4,7 @@ from torch.autograd import Variable
 import torch.optim as optim
 
 import os
+import re
 
 from config import Config
 import utils
@@ -80,6 +81,38 @@ def evaluate(model, source, target, conf):
     return total_loss / data_size
 
 
+def lr_schedule(t):
+    """
+    learning rate schedule, use piecewise
+    """
+    if t < 10:
+        return 0.001
+
+    if t < 50:
+        return 0.0002
+
+    return 0.0001
+
+
+def get_latest_saver(path, prefix):
+    """
+    return the latest saved model name and epoch number
+    """
+    files = os.listdir(path)
+
+    latest = 0
+    file_name = ""
+    pattern = re.compile(r"{}_(\d+)".format(prefix))
+    for f in files:
+        if f.startswith(prefix):
+            epoch = int(re.findall(pattern, f)[0])
+            if latest < epoch:
+                latest = epoch
+                file_name = f
+
+    return os.path.join(path, file_name), latest
+
+
 def main():
     # Load data
     conf = Config()
@@ -108,9 +141,9 @@ def main():
     min_loss = float("inf")
     lr = conf.lr
 
-    # Check existent saved model
-    save_file = os.path.join(conf.save_path, model.name)
-    if os.path.exists(save_file) and not conf.debug_mode:
+    # Check latest saved model
+    save_file, start_epoch = get_latest_saver(conf.save_path, model.name)
+    if start_epoch > 0 and not conf.debug_mode:
         try:
             model = torch.load(save_file)
             min_loss = model.evaluate(dev_source_seqs, dev_target_seqs)
@@ -119,8 +152,10 @@ def main():
             print("[loading existing model error] {}".format(str(e)))
 
     # Training
-    for epoch in range(conf.epochs):
+    for epoch in range(start_epoch, conf.epochs+start_epoch):
+        lr = lr_schedule(epoch)
         print("*** Epoch [{:5d}] ***".format(epoch))
+
         train_loss = train(model, train_source_seqs, train_target_seqs, lr, conf)
         print("Training set\tLoss: {:5.6f}".format(train_loss))
 
@@ -129,12 +164,12 @@ def main():
 
         dev_loss = evaluate(model, dev_source_seqs, dev_target_seqs, conf)
 
-        if dev_loss < min_loss:
-            min_loss = dev_loss
-            with open(save_file, "wb") as f:
-                torch.save(model, f)
-
         print("Validation set\tLoss: {:5.6f}".format(dev_loss))
+
+    save_file = os.path.join(conf.save_path, 
+            "{}_{}".format(model.name, conf.epochs+start_epoch))
+    with open(save_file, "wb") as f:
+        torch.save(model, f)
 
 
 if __name__ == "__main__":
