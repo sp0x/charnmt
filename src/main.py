@@ -100,7 +100,7 @@ def get_latest_saver(path, prefix):
     """
     files = os.listdir(path)
 
-    latest = 0
+    latest = -1
     file_name = ""
     pattern = re.compile(r"{}_(\d+)".format(prefix))
     for f in files:
@@ -143,18 +143,20 @@ def main():
 
     # Check latest saved model
     save_file, start_epoch = get_latest_saver(conf.save_path, model.name)
-    if start_epoch > 0 and not conf.debug_mode:
+    if start_epoch >= 0 and not conf.debug_mode:
         try:
             model = torch.load(save_file)
-            min_loss = model.evaluate(dev_source_seqs, dev_target_seqs)
+            min_loss = evaluate(model, train_source_seqs, train_target_seqs, conf)
             print("Initial validation loss: {:5.6f}".format(min_loss))
         except RuntimeError as e:
             print("[loading existing model error] {}".format(str(e)))
+    else:
+        start_epoch = 0
 
     # Training
     for epoch in range(start_epoch, conf.epochs+start_epoch):
         lr = lr_schedule(epoch)
-        print("*** Epoch [{:5d}] ***".format(epoch))
+        print("*** Epoch [{:5d}] lr = {} ***".format(epoch, lr))
 
         train_loss = train(model, train_source_seqs, train_target_seqs, lr, conf)
         print("Training set\tLoss: {:5.6f}".format(train_loss))
