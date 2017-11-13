@@ -5,10 +5,12 @@ import torch.optim as optim
 
 import os
 import re
+import random
 
 from config import Config
 import utils
 from CharNMT import CharNMT
+from generate import generator
 
 
 def loss_in_batch(output, label, mask, loss_fn):
@@ -113,6 +115,11 @@ def get_latest_saver(path, prefix):
     return os.path.join(path, file_name), latest
 
 
+def convert2sequence(seq, idx2char):
+    seq = [idx2char[i] for i in seq]
+    return "".join(seq)
+
+
 def main():
     # Load data
     conf = Config()
@@ -198,6 +205,19 @@ def main():
         test_loss = evaluate(model, test_source_seqs, test_target_seqs, conf)
         print("Test set loss after {:4d} epochs: {:5.6f}".format(
             conf.epochs+start_epoch, test_loss))
+
+    # randomly pick source sentences in test set and generate translation
+    random.seed(890619)
+    order = list(range(len(test_source_seqs)))
+    random.shuffle(order)
+    order = order[:10]
+
+    gen = generator(model, idx2char)
+    for i in order:
+        translation = gen.translate(test_source_seqs)
+        print("Source:\t{}\n".format(convert2sequence(test_source_seqs[i])))
+        print("Reference:\t{}\n".format(convert2sequence(test_target_seqs[i])))
+        print("Translation:\t{}\n".format(translation))
 
 
 if __name__ == "__main__":
