@@ -222,13 +222,15 @@ class Decoder(nn.Module):
         @return
             next_char: tensor, a distribution of each character
             h: updated memory state of RNN decoder
+            alpha: tensor, attention weights of each segments, with dimension 
+                (batch_size, seq_len)
         """
         y = self.embedding(prev_y.long())
 
         # attention mechanism
         batch_size = y.size(0)
         prev_h = prev_s.transpose(0,1).contiguous().view(batch_size, -1)
-        context = self._attention(prev_h, y, z)
+        context, attn = self._attention(prev_h, y, z)
 
         # update memory cell
         cat_input = torch.cat((y, context), 1).unsqueeze(1)
@@ -237,7 +239,7 @@ class Decoder(nn.Module):
         # decode
         next_char = self._decode(context)
 
-        return next_char, h
+        return next_char, h, attn
 
 
     def _attention(self, prev_s, prev_y, z):
@@ -257,7 +259,9 @@ class Decoder(nn.Module):
 
         @return
             c: tensor, weighted average of all input tokens, with dimension 
-               (batch_size, context_dim)
+                (batch_size, context_dim)
+            alpha: tensor, attention weights of each segments, with dimension 
+                (batch_size, seq_len)
         ----------
         """
         batch_size, seq_len, dim = z.size()
@@ -273,7 +277,7 @@ class Decoder(nn.Module):
         alpha = F.softmax(betas)
         c = alpha * z
 
-        return c.sum(1)
+        return c.sum(1), alpha.squeeze()
 
 
     def _decode(self, c):
@@ -347,11 +351,11 @@ class CharNMT(nn.Module):
                     with dimention (batch_size, hid_dim)
             
         @return
-            char at time t and hidden state in decoder at time t
+            char at time t, hidden state in decoder at time t and attention 
+            weights
         ----------
         '''
-        next_char, dec_h = self.decoder(dec_h, x, c)
-        return next_char, dec_h
+        return self.decoder(dec_h, x, c)
 
 
     def zero_grads(self):

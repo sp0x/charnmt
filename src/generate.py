@@ -35,7 +35,7 @@ class generator(object):
         char_idx = 1 # <SOS>
         while char_idx != 2:
             prev_char = Variable(torch.LongTensor([char_idx]))
-            next_char, dec_h = self.model(prev_char, context, dec_h)
+            next_char, dec_h, attn = self.model(prev_char, context, dec_h)
             char_idx = next_char.data.topk(1)[1][0][0] # greedy decoding
             translation += self.idx2char[char_idx]
 

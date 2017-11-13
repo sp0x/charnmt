@@ -40,7 +40,7 @@ def train(model, source, target, lr, conf):
 
         context = model.compute_context(x, enc_h)
         for i in range(1, y.size(1)):
-            next_char, dec_h = model(y[:,i-1], context, dec_h)
+            next_char, dec_h, attn = model(y[:,i-1], context, dec_h)
             batch_loss += loss_in_batch(next_char, y[:,i], mask[:,i], loss_fn)
         batch_loss /= batch_size
 
@@ -75,7 +75,7 @@ def evaluate(model, source, target, conf):
 
         context = model.compute_context(x, enc_h)
         for i in range(1, y.size(1)):
-            next_char, dec_h = model(y[:,i-1], context, dec_h)
+            next_char, dec_h, attn = model(y[:,i-1], context, dec_h)
             batch_loss += loss_in_batch(next_char, y[:,i], mask[:,i], loss_fn)
 
         total_loss += batch_loss.data[0]
@@ -206,6 +206,7 @@ def main():
         print("Test set loss after {:4d} epochs: {:5.6f}".format(
             conf.epochs+start_epoch, test_loss))
 
+        """
         # randomly pick source sentences in test set and generate translation
         random.seed(890619)
         order = list(range(len(test_source_seqs)))
@@ -218,6 +219,7 @@ def main():
             print("Source:\t{}\n".format(convert2sequence(test_source_seqs[i])))
             print("Reference:\t{}\n".format(convert2sequence(test_target_seqs[i])))
             print("Translation:\t{}\n".format(translation))
+        """
 
 
 if __name__ == "__main__":
