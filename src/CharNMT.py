@@ -185,7 +185,7 @@ class Decoder(nn.Module):
         self._align = nn.Linear(attention_feature_dim, 1)
 
         # decoder network from attention
-        self.decode_layers = [context_dim] + decoder_layers + [tar_emb]
+        self.decode_layers = [context_dim] + decoder_layers + [vocab_size]
         for i in range(len(self.decode_layers)-1):
             fc = nn.Linear(self.decode_layers[i], self.decode_layers[i+1])
             setattr(self, "decoder_layer{}".format(i+1), fc)
@@ -280,7 +280,7 @@ class Decoder(nn.Module):
         x = c
         for i in range(len(self.decode_layers)-1):
             x = getattr(self, "decoder_layer{}".format(i+1))(x)
-        return x
+        return F.softmax(x)
 
 
 class CharNMT(nn.Module):
