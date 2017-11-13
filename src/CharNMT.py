@@ -280,7 +280,7 @@ class Decoder(nn.Module):
         x = c
         for i in range(len(self.decode_layers)-1):
             x = getattr(self, "decoder_layer{}".format(i+1))(x)
-        return F.softmax(x)
+        return x
 
 
 class CharNMT(nn.Module):
