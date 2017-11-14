@@ -23,10 +23,11 @@ class Config(object):
     stride = 5
     dropout = 0.5
     
-    epochs = 100
-    batch_size = 64
+    epochs = 5
+    batch_size = 32
     lr = 0.0001
     log_interval = 100
     reverse_source = False
 
-    debug_mode = True
+    debug_mode = False
+    cuda = True

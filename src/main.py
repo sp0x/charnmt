@@ -33,12 +33,20 @@ def train(model, source, target, lr, conf):
         batch_size, max_len = x.shape
         x = Variable(torch.Tensor(x.tolist()), volatile=False)
         y = Variable(torch.LongTensor(y.tolist()))
+
         enc_h, dec_h = model.init_hidden(batch_size)
 
         model.zero_grads()
         batch_loss = 0
 
+        if conf.cuda:
+            x = x.cuda()
+            y = y.cuda()
+            enc_h = enc_h.cuda()
+            dec_h = dec_h.cuda()
+
         context = model.compute_context(x, enc_h)
+
         for i in range(1, y.size(1)):
             next_char, dec_h, attn = model(y[:,i-1], context, dec_h)
             batch_loss += loss_in_batch(next_char, y[:,i], mask[:,i], loss_fn)
@@ -69,7 +77,14 @@ def evaluate(model, source, target, conf):
         batch_size, max_len = x.shape
         x = Variable(torch.Tensor(x.tolist()), volatile=True)
         y = Variable(torch.LongTensor(y.tolist()))
+
         enc_h, dec_h = model.init_hidden(batch_size)
+
+        if conf.cuda:
+            x = x.cuda()
+            y = y.cuda()
+            enc_h = enc_h.cuda()
+            dec_h = dec_h.cuda()
 
         batch_loss = 0
 
@@ -88,7 +103,7 @@ def lr_schedule(t):
     learning rate schedule, use piecewise
     """
     if t < 10:
-        return 0.001
+        return 0.0005
 
     if t < 50:
         return 0.0002
@@ -166,6 +181,9 @@ def main():
             conf.dropout, 
             conf.stride)
 
+    if conf.cuda:
+        model.cuda()
+
     min_loss = float("inf")
     lr = conf.lr
 
@@ -180,6 +198,12 @@ def main():
             print("[loading existing model error] {}".format(str(e)))
     else:
         start_epoch = 0
+
+    if not conf.debug_mode:
+        size = 10000
+        idx = (start_epoch // conf.epochs * size) % len(train_source_seqs)
+        train_source_seqs = train_source_seqs[idx:idx+size]
+        train_target_seqs = train_target_seqs[idx:idx+size]
 
     # Training
     for epoch in range(start_epoch, conf.epochs+start_epoch):
@@ -206,8 +230,8 @@ def main():
         print("Test set loss after {:4d} epochs: {:5.6f}".format(
             conf.epochs+start_epoch, test_loss))
 
-        """
         # randomly pick source sentences in test set and generate translation
+        """
         random.seed(890619)
         order = list(range(len(test_source_seqs)))
         random.shuffle(order)
