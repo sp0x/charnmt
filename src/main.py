@@ -201,7 +201,7 @@ def main():
 
     if not conf.debug_mode:
         size = 10000
-        idx = (start_epoch // conf.epochs * size) % len(train_source_seqs)
+        idx = (start_epoch // conf.epochs * size) % (len(train_source_seqs) // size)
         train_source_seqs = train_source_seqs[idx:idx+size]
         train_target_seqs = train_target_seqs[idx:idx+size]
 
