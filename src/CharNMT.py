@@ -32,7 +32,7 @@ class Encoder(nn.Module):
         # half convolution with 8-grams
         self.n_filters = [200, 200, 250, 250, 300, 300, 300, 300]
         for i in range(len(self.n_filters)):
-            conv2d = nn.Conv2d(1, self.n_filters[i], (i+1, src_emb), padding=(i, 0))
+            conv2d = nn.Conv2d(1, self.n_filters[i], (i+1, src_emb), padding=(i, 0), bias=False)
             setattr(self, "conv_layer{}".format(i+1), conv2d)
 
         # number of layers in highway network
@@ -49,6 +49,9 @@ class Encoder(nn.Module):
 
         self._init_weights()
 
+        #
+        self.test_rnn = nn.GRU(src_emb, hid_dim, 1, batch_first=True, dropout=dropout, bidirectional=True)
+
 
     def _init_weights(self):
         initrange = 0.1
@@ -59,9 +62,11 @@ class Encoder(nn.Module):
         return Variable(torch.zeros(self.n_rnn_layers*2, batch_size, self.hid_dim))
 
 
-    def forward(self, x, h):
+    def forward(self, x, h, flag=True):
         # Embedding
         x = self.embedding(x.long())
+        if flag:
+            return self.test_rnn(x, h)
 
         # Convoluation
         x = torch.unsqueeze(x, 1)
@@ -191,7 +196,7 @@ class Decoder(nn.Module):
 
         # rnn decoder
         self.n_rnn_layers = n_rnn_layers
-        input_dim = tar_emb + context_dim
+        input_dim = tar_emb# + context_dim
         self.rnn_decoder = nn.GRU(input_dim, hid_dim, self.n_rnn_layers, 
                 batch_first=True, dropout=dropout, bidirectional=True)
 
@@ -232,7 +237,8 @@ class Decoder(nn.Module):
         context, attn = self._attention(prev_h, y, z)
 
         # update memory cell
-        cat_input = torch.cat((y, context), 1).unsqueeze(1)
+        #cat_input = torch.cat((y, context), 1).unsqueeze(1)
+        cat_input = y.unsqueeze(1)
         output, h = self.rnn_decoder(cat_input, prev_s)
 
         # decode
@@ -269,7 +275,7 @@ class Decoder(nn.Module):
         for i in range(seq_len):
             z_i = z[:,i,:]
             x = torch.cat((prev_s, prev_y, z_i), 1)
-            beta = F.tanh(self._align(x))
+            beta = self._align(x)
             betas.append(beta)
 
         betas = torch.stack(betas, 1)

@@ -20,14 +20,15 @@ class Config(object):
     source_emb = 128
     target_emb = 512
     hid_dim = 300
-    stride = 5
+    stride = 1
     dropout = 0.5
     
-    epochs = 5
-    batch_size = 32
+    epochs = 10
+    batch_size = 1
     lr = 0.0001
-    log_interval = 100
+    log_interval = 50
     reverse_source = False
+    word_level = True
 
-    debug_mode = False
-    cuda = True
+    debug_mode = True
+    cuda = False

@@ -4,7 +4,7 @@ import random
 import numpy as np
 
 
-def build_char_vocab(filenames):
+def build_char_vocab(filenames, word=True):
     """
     Build character vocabulary from a file
 
@@ -24,12 +24,23 @@ def build_char_vocab(filenames):
             "<UNK>" : 3,
             }
     idx2char = ["<PAD>", "<SOS>", "<EOS>", "<UNK>"]
+    i = 0
     for filename in filenames:
         with open(filename, "r", encoding="utf-8") as f:
             for line in f:
+                if i > 100:
+                    return vocab, idx2char
+                i+=1
                 source, target = line.strip().split("<JOIN>")
                 source = source[:-5].strip()
                 target = target[:-5].strip()
+                if word:
+                    seq = source + " " + target
+                    for w in seq.split(" "):
+                        if w not in vocab:
+                            vocab[w] = len(vocab)
+                            idx2char.append(w)
+                    continue
                 for c in source + target:
                     if c not in vocab:
                         vocab[c] = len(vocab)
@@ -38,7 +49,7 @@ def build_char_vocab(filenames):
     return vocab, idx2char
 
 
-def load_data(file_path, vocab, pickle_path, max_len, reverse_source):
+def load_data(file_path, vocab, pickle_path, max_len, reverse_source, word=True):
     """
     Load source and target language sequences, each list contains a list of 
     character indices converted from vocabulary
@@ -75,14 +86,31 @@ def load_data(file_path, vocab, pickle_path, max_len, reverse_source):
 
     source_seqs = []
     target_seqs = []
+    i = 0
     with open(file_path, "r", encoding="utf-8") as f:
         for line in f:
+            if i > 100:
+                return source_seqs, target_seqs
+            i+=1
             source_seq = [vocab["<SOS>"]]
             target_seq = [vocab["<SOS>"]]
 
             source, target = line.strip().split("<JOIN>")
             source = source[:-5].strip()
             target = target[:-5].strip()
+
+            if word:
+                for w in source.split(" "):
+                    source_seq.append(vocab[w])
+                source_seq.append(vocab["<EOS>"])
+
+                for w in target.split(" "):
+                    target_seq.append(vocab[w])
+                target_seq.append(vocab["<EOS>"])
+                
+                source_seqs.append(source_seq)
+                target_seqs.append(target_seq)
+                continue
             
             if len(source) <= max_len:
   
@@ -192,4 +220,10 @@ def pad_label(batch_label):
         label_mask[i,1:length] = 1
 
     return padded_label, label_mask
+
+
+def convert2sequence(seq, idx2char):
+    seq = [idx2char[i] for i in seq]
+    return "".join(seq)
+
 

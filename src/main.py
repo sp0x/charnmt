@@ -20,16 +20,16 @@ def loss_in_batch(output, label, mask, loss_fn):
     return loss
 
 
-def train(model, source, target, lr, conf):
+def train(model, source, target, lr, conf, idx2char):
     model.train()
     opt = optim.Adam(model.parameters(), lr=lr)
-    loss_fn = nn.CrossEntropyLoss()
+    loss_fn = nn.NLLLoss()
 
     total_loss = 0
     data_size = len(source)
 
     for batch, (x, y, mask) in enumerate(utils.batchify(
-        source, target, conf.stride, conf.batch_size, True)):
+        source, target, conf.stride, conf.batch_size, False)):
         batch_size, max_len = x.shape
         x = Variable(torch.Tensor(x.tolist()), volatile=False)
         y = Variable(torch.LongTensor(y.tolist()))
@@ -46,10 +46,15 @@ def train(model, source, target, lr, conf):
 
         context, dec_h = model.encoder(x, enc_h)
 
+        translation = []
+        gen = generator(model, idx2char)
         for i in range(1, y.size(1)):
             next_char, dec_h, attn = model(y[:,i-1], context, dec_h)
             batch_loss += loss_in_batch(next_char, y[:,i], mask[:,i], loss_fn)
+            char_idx = next_char.data.topk(1)[1][0][0]
+            translation.append(char_idx)
         batch_loss /= batch_size
+        print(translation)
 
         batch_loss.backward()
         opt.step()
@@ -66,7 +71,7 @@ def train(model, source, target, lr, conf):
 
 def evaluate(model, source, target, conf):
     model.eval()
-    loss_fn = nn.CrossEntropyLoss()
+    loss_fn = nn.NLLLoss()
 
     total_loss = 0
     data_size = len(source)
@@ -129,11 +134,6 @@ def get_latest_saver(path, prefix):
     return os.path.join(path, file_name), latest
 
 
-def convert2sequence(seq, idx2char):
-    seq = [idx2char[i] for i in seq]
-    return "".join(seq)
-
-
 def main():
     # Load data
     conf = Config()
@@ -149,6 +149,7 @@ def main():
             conf.reverse_source)
     print("{} source and {} target sequences of training set loaded.".format(
         len(train_source_seqs), len(train_target_seqs)))
+    """
     dev_source_seqs, dev_target_seqs = utils.load_data(
             conf.dev_path, 
             vocab, 
@@ -165,11 +166,7 @@ def main():
             conf.reverse_source)
     print("{} source and {} target sequences of test set loaded.".format(
         len(test_source_seqs), len(test_target_seqs)))
-
-    if conf.debug_mode:
-        debug_size = int(conf.batch_size * 1.5)
-        train_source_seqs = train_source_seqs[:debug_size]
-        train_target_seqs = train_target_seqs[:debug_size]
+    """
 
     # Define model
     model = CharNMT(len(vocab), 
@@ -188,6 +185,18 @@ def main():
 
     # Check latest saved model
     save_file, start_epoch = get_latest_saver(conf.save_path, model.name)
+
+    if conf.debug_mode:
+        debug_size = int(conf.batch_size * 1)
+        train_source_seqs = train_source_seqs[:debug_size]
+        train_target_seqs = train_target_seqs[:debug_size]
+    else:
+        size = 10000
+        idx = (start_epoch // conf.epochs) % (len(train_source_seqs) // size)
+        idx *= size
+        train_source_seqs = train_source_seqs[idx:idx+size]
+        train_target_seqs = train_target_seqs[idx:idx+size]
+
     if start_epoch >= 0 and not conf.debug_mode:
         try:
             model = torch.load(save_file)
@@ -198,19 +207,12 @@ def main():
     else:
         start_epoch = 0
 
-    if not conf.debug_mode:
-        size = 10000
-        idx = (start_epoch // conf.epochs) % (len(train_source_seqs) // size)
-        idx *= size
-        train_source_seqs = train_source_seqs[idx:idx+size]
-        train_target_seqs = train_target_seqs[idx:idx+size]
-
     # Training
     for epoch in range(start_epoch, conf.epochs+start_epoch):
         lr = lr_schedule(epoch)
         print("*** Epoch [{:5d}] lr = {} ***".format(epoch, lr))
 
-        train_loss = train(model, train_source_seqs, train_target_seqs, lr, conf)
+        train_loss = train(model, train_source_seqs, train_target_seqs, lr, conf, idx2char)
         print("Training set\tLoss: {:5.6f}".format(train_loss))
 
         if conf.debug_mode:
@@ -229,21 +231,6 @@ def main():
         test_loss = evaluate(model, test_source_seqs, test_target_seqs, conf)
         print("Test set loss after {:4d} epochs: {:5.6f}".format(
             conf.epochs+start_epoch, test_loss))
-
-        # randomly pick source sentences in test set and generate translation
-        """
-        random.seed(890619)
-        order = list(range(len(test_source_seqs)))
-        random.shuffle(order)
-        order = order[:10]
-
-        gen = generator(model, idx2char)
-        for i in order:
-            translation = gen.translate(test_source_seqs)
-            print("Source:\t{}\n".format(convert2sequence(test_source_seqs[i])))
-            print("Reference:\t{}\n".format(convert2sequence(test_target_seqs[i])))
-            print("Translation:\t{}\n".format(translation))
-        """
 
 
 if __name__ == "__main__":
