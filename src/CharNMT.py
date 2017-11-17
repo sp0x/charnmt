@@ -74,9 +74,9 @@ class Encoder(nn.Module):
         x = self._highway_net(x)
 
         # Recurrent layer
-        x = self._recurrent(x, h)
+        x, h = self._recurrent(x, h)
 
-        return x
+        return x, h
 
 
     def _convolution(self, x):
@@ -155,8 +155,7 @@ class Encoder(nn.Module):
                with dimension (batch_size, seq_len, feature)
         ----------
         """
-        output, h = self.rnn_encoder(x, h)
-        return output
+        return self.rnn_encoder(x, h)
 
 
 class Decoder(nn.Module):
@@ -327,16 +326,6 @@ class CharNMT(nn.Module):
 
         self.decoder = Decoder(tar_emb, hid_dim, vocab_size, hid_dim * 2, 
                 dropout, n_rnn_decoder_layers, decoder_layers)
-
-
-    def init_hidden(self, batch_size):
-        enc_h = self.encoder.init_gru(batch_size)
-        dec_h = self.decoder.init_gru(batch_size)
-        return enc_h, dec_h
-
-
-    def compute_context(self, x, enc_h):
-        return self.encoder(x, enc_h)
 
 
     def forward(self, x, c, dec_h):

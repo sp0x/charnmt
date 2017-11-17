@@ -27,7 +27,7 @@ def build_char_vocab(filenames):
     for filename in filenames:
         with open(filename, "r", encoding="utf-8") as f:
             for line in f:
-                source, target = line.split("<JOIN>")
+                source, target = line.strip().split("<JOIN>")
                 source = source[:-5].strip()
                 target = target[:-5].strip()
                 for c in source + target:
@@ -80,7 +80,7 @@ def load_data(file_path, vocab, pickle_path, max_len, reverse_source):
             source_seq = [vocab["<SOS>"]]
             target_seq = [vocab["<SOS>"]]
 
-            source, target = line.split("<JOIN>")
+            source, target = line.strip().split("<JOIN>")
             source = source[:-5].strip()
             target = target[:-5].strip()
             
@@ -189,7 +189,7 @@ def pad_label(batch_label):
         length = len(batch_label[i])
         pad = np.pad(batch_label[i], (0, max_len-length), "constant")
         padded_label[i] = pad
-        label_mask[1:length] = 1
+        label_mask[i,1:length] = 1
 
     return padded_label, label_mask
 

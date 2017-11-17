@@ -34,7 +34,7 @@ def train(model, source, target, lr, conf):
         x = Variable(torch.Tensor(x.tolist()), volatile=False)
         y = Variable(torch.LongTensor(y.tolist()))
 
-        enc_h, dec_h = model.init_hidden(batch_size)
+        enc_h = model.encoder.init_gru(batch_size)
 
         model.zero_grads()
         batch_loss = 0
@@ -43,9 +43,8 @@ def train(model, source, target, lr, conf):
             x = x.cuda()
             y = y.cuda()
             enc_h = enc_h.cuda()
-            dec_h = dec_h.cuda()
 
-        context = model.compute_context(x, enc_h)
+        context, dec_h = model.encoder(x, enc_h)
 
         for i in range(1, y.size(1)):
             next_char, dec_h, attn = model(y[:,i-1], context, dec_h)
@@ -78,17 +77,17 @@ def evaluate(model, source, target, conf):
         x = Variable(torch.Tensor(x.tolist()), volatile=True)
         y = Variable(torch.LongTensor(y.tolist()))
 
-        enc_h, dec_h = model.init_hidden(batch_size)
+        enc_h = model.encoder.init_gru(batch_size)
 
         if conf.cuda:
             x = x.cuda()
             y = y.cuda()
             enc_h = enc_h.cuda()
-            dec_h = dec_h.cuda()
 
         batch_loss = 0
 
-        context = model.compute_context(x, enc_h)
+        context, dec_h = model.encoder(x, enc_h)
+
         for i in range(1, y.size(1)):
             next_char, dec_h, attn = model(y[:,i-1], context, dec_h)
             batch_loss += loss_in_batch(next_char, y[:,i], mask[:,i], loss_fn)
