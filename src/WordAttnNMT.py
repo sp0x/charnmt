@@ -3,6 +3,7 @@ import torch.nn as nn
 from torch.autograd import Variable
 import torch.nn.functional as F
 import torch.optim as optim
+from torch.nn.utils.rnn import pad_packed_sequence, pack_padded_sequence
 
 import utils
 import config
@@ -21,18 +22,21 @@ class Encoder(nn.Module):
         self.n_layers = n_layers
         self.hid_dim = hid_dim
 
-        self.embedding = nn.Embedding(vocab_size, src_emb)
+        self.embedding = nn.Embedding(vocab_size, src_emb, padding_idx=0)
         self.gru = nn.GRU(src_emb, hid_dim, n_layers, 
                 batch_first=True, dropout=dropout, bidirectional=True)
 
     def init_hidden(self, batch_size):
         return Variable(torch.zeros(2, batch_size, self.hid_dim))
 
-    def forward(self, x, h):
+    def forward(self, x, h, seq_len):
         x = self.embedding(x)
-        x, h = self.gru(x, h)
-        return x, h
 
+        packed_seq = pack_padded_sequence(x, seq_len, batch_first=True)
+        output, h = self.gru(packed_seq, h)
+        output, out_len = pad_packed_sequence(output, True)
+
+        return output, h
 
 class Decoder(nn.Module):
 
@@ -47,7 +51,7 @@ class Decoder(nn.Module):
         self.n_layers = n_layers
         self.hid_dim = hid_dim
 
-        self.embedding = nn.Embedding(vocab_size, tar_emb)
+        self.embedding = nn.Embedding(vocab_size, tar_emb, padding_idx=0)
         self.attn = nn.Linear(hid_dim * 4 + tar_emb, 1)
         self.gru = nn.GRU(hid_dim*2, hid_dim, n_layers, 
                 batch_first=True, dropout=dropout, bidirectional=True)
@@ -81,8 +85,8 @@ def train(source, target, encoder, decoder, lr, conf):
     loss_fn = nn.NLLLoss()
 
     total_loss = 0
-    for batch, (x, y, mask) in enumerate(utils.batchify(
-        source, target, conf.stride, conf.batch_size, False)):
+    for batch, (x, x_len, y, mask) in enumerate(utils.batchify(
+        source, target, conf.stride, conf.batch_size, True)):
         enc_opt.zero_grad()
         dec_opt.zero_grad()
         loss = 0
@@ -98,13 +102,14 @@ def train(source, target, encoder, decoder, lr, conf):
             y = y.cuda()
             enc_h = enc_h.cuda()
 
-        encoder_out, dec_h = encoder(x, enc_h)
+        encoder_out, dec_h = encoder(x, enc_h, x_len)
 
         for i in range(1, y.size(1)):
             decoder_out, dec_h, attn = decoder(y[:,i-1], dec_h, encoder_out)
-            loss += loss_fn(decoder_out, y[:,i])
+            loss += utils.loss_in_batch(decoder_out, y[:,i], mask[:,i], loss_fn)
 
         total_loss += loss
+        loss /= batch_size
         loss.backward()
 
         enc_opt.step()
@@ -120,7 +125,7 @@ def evaluate(source, target, encoder, decoder, conf, idx2char):
 
     total_loss = 0
     translations = []
-    for batch, (x, y, mask) in enumerate(utils.batchify(
+    for batch, (x, x_len, y, mask) in enumerate(utils.batchify(
         source, target, conf.stride, 1, False)):
         loss = 0
 
@@ -135,12 +140,13 @@ def evaluate(source, target, encoder, decoder, conf, idx2char):
             y = y.cuda()
             enc_h = enc_h.cuda()
 
-        encoder_out, dec_h = encoder(x, enc_h)
+        encoder_out, dec_h = encoder(x, enc_h, x_len)
 
         translation = ""
         for i in range(1, y.size(1)):
             decoder_out, dec_h, attn = decoder(y[:,i-1], dec_h, encoder_out)
-            loss += loss_fn(decoder_out, y[:,i])
+            loss += utils.loss_in_batch(decoder_out, y[:,i], mask[:,i], loss_fn)
+
             char = idx2char[decoder_out.data.topk(1)[1][0][0]]
             translation += char + " "
 
@@ -163,7 +169,8 @@ def main():
             vocab, 
             conf.train_pickle,
             conf.max_seq_len, 
-            conf.reverse_source)
+            conf.reverse_source, 
+            conf.word_level)
 
     encoder = Encoder(
             conf.source_emb, 

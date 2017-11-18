@@ -154,16 +154,17 @@ def batchify(data, label, stride, batch_size=None, shuffle=False):
         start = i * batch_size
         indices = order[start: start+batch_size]
 
-        padded_data = pad_data(data[indices], stride)
+        padded_data, src_len = pad_data(data[indices], stride)
         padded_label, label_mask = pad_label(label[indices])
         
-        yield padded_data, padded_label, label_mask
+        yield padded_data, src_len, padded_label, label_mask
             
 
 def pad_data(batch_data, stride):
     """
     For source sequence data in a batch, 
-    zero-pad the short ones up to the multiples of stride
+    zero-pad the short ones up to the multiples of stride, 
+    and sort descendantly by sequence length
     
     ----------
     @param 
@@ -176,18 +177,23 @@ def pad_data(batch_data, stride):
     """
     lens = [len(data) for data in batch_data]
     max_len = max(lens)
-    max_len += stride - (max_len % stride)
+    if max_len % stride != 0:
+        max_len += stride - (max_len % stride)
 
     batch_size = len(batch_data)
     n_tokens = len(batch_data[0])
     padded_data = np.zeros([batch_size, max_len], dtype=np.int32)
+    seq_len = []
     
     for i in range(batch_size):
         length = len(batch_data[i])
         pad = np.pad(batch_data[i], (0, max_len-length), "constant")
         padded_data[i] = pad
+        seq_len.append(length)
 
-    return padded_data
+    order = np.flip(np.argsort(seq_len), 0) # sort descendantly
+
+    return padded_data[order], np.array(seq_len)[order]
     
 
 def pad_label(batch_label):
@@ -227,3 +233,8 @@ def convert2sequence(seq, idx2char, delimit=" "):
     return delimit.join(seq)
 
 
+def loss_in_batch(output, label, mask, loss_fn):
+    loss = 0
+    for i in range(len(output)):
+        loss += loss_fn(output[i:i+1], label[i:i+1]) * mask[i]
+    return loss
