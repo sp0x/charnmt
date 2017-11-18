@@ -144,6 +144,9 @@ def evaluate(source, target, encoder, decoder, conf, idx2char):
             char = idx2char[decoder_out.data.topk(1)[1][0][0]]
             translation += char + " "
 
+            if char == "<EOS>":
+                break
+
         total_loss += loss
         translations.append(translation)
 
