@@ -79,6 +79,12 @@ def train(source, target, encoder, decoder, lr, conf):
         y = Variable(torch.LongTensor(y.tolist()))
 
         enc_h = encoder.init_hidden(batch_size)
+
+        if conf.cuda:
+            x = x.cuda()
+            y = y.cuda()
+            enc_h = enc_h.cuda()
+
         encoder_out, dec_h = encoder(x, enc_h)
 
         for i in range(1, y.size(1)):
@@ -100,6 +106,7 @@ def evaluate(source, target, encoder, decoder, conf, idx2char):
     loss_fn = nn.NLLLoss()
 
     total_loss = 0
+    translations = []
     for batch, (x, y, mask) in enumerate(utils.batchify(
         source, target, conf.stride, 1, False)):
         loss = 0
@@ -109,6 +116,12 @@ def evaluate(source, target, encoder, decoder, conf, idx2char):
         y = Variable(torch.LongTensor(y.tolist()))
 
         enc_h = encoder.init_hidden(batch_size)
+
+        if conf.cuda:
+            x = x.cuda()
+            y = y.cuda()
+            enc_h = enc_h.cuda()
+
         encoder_out, dec_h = encoder(x, enc_h)
 
         translation = ""
@@ -116,15 +129,12 @@ def evaluate(source, target, encoder, decoder, conf, idx2char):
             decoder_out, dec_h = decoder(y[:,i-1], dec_h)
             loss += loss_fn(decoder_out, y[:,i])
             char = idx2char[decoder_out.data.topk(1)[1][0][0]]
-            translation += char
-
-        #print("Source\t{}".format(utils.convert2sequence(x[0].data.numpy(), idx2char)))
-        #print("Ref\t{}".format(utils.convert2sequence(y[0].data.numpy(), idx2char)))
-        #print("Output\t{}".format(translation))
+            translation += char + " "
 
         total_loss += loss
+        translations.append(translation)
 
-    return total_loss.data[0] / len(source)
+    return total_loss.data[0] / len(source), translations
 
 
 def main():
@@ -150,13 +160,35 @@ def main():
             len(vocab), 
             conf.dropout)
 
+    if conf.cuda:
+        encoder.cuda()
+        decoder.cuda()
+
     lr = conf.lr
     for epoch in range(conf.epochs):
+        print("*** Epoch [{:5d}] lr = {} ***".format(epoch, lr))
+
         train_loss = train(train_source_seqs, train_target_seqs, 
                 encoder, decoder, lr, conf)
+        print("Training loss: {:5.6f}".format(train_loss))
 
-        evaluate(train_source_seqs, train_target_seqs, 
+        loss, translations = evaluate(train_source_seqs, train_target_seqs, 
                 encoder, decoder, conf, idx2char)
+        print("Validation loss: {:5.6f}".format(loss))
+
+        if epoch == conf.epochs - 1:
+            for i in range(len(train_source_seqs)):
+                print("Source\t{}".format(
+                    utils.convert2sequence(train_source_seqs[i], idx2char)))
+                print("Ref\t{}".format(
+                    utils.convert2sequence(train_target_seqs[i], idx2char)))
+                print("Output\t{}\n".format(translations[i]))
+
+
+    with open(conf.save_path+"/encoderW", "wb") as f:
+        torch.save(encoder, f)
+    with open(conf.save_path+"/decoderW", "wb") as f:
+        torch.save(decoder, f)
 
 
 if __name__ == "__main__":

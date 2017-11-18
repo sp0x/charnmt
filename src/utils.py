@@ -222,8 +222,8 @@ def pad_label(batch_label):
     return padded_label, label_mask
 
 
-def convert2sequence(seq, idx2char):
+def convert2sequence(seq, idx2char, delimit=" "):
     seq = [idx2char[i] for i in seq]
-    return "".join(seq)
+    return delimit.join(seq)
 
 
