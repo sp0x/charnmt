@@ -5,6 +5,8 @@ import torch.nn.functional as F
 import torch.optim as optim
 from torch.nn.utils.rnn import pad_packed_sequence, pack_padded_sequence
 
+import random
+
 import utils
 import config
 
@@ -52,29 +54,31 @@ class Decoder(nn.Module):
         self.hid_dim = hid_dim
 
         self.embedding = nn.Embedding(vocab_size, tar_emb, padding_idx=0)
-        self.attn = nn.Linear(hid_dim * 4 + tar_emb, 1)
-        self.gru = nn.GRU(hid_dim*2, hid_dim, n_layers, 
-                batch_first=True, dropout=dropout, bidirectional=True)
-        self.out = nn.Linear(hid_dim*2, vocab_size)
+        self.attn = nn.Linear(hid_dim * 3, 1)
+        self.gru = nn.GRU(hid_dim*2+tar_emb, hid_dim, n_layers, 
+                batch_first=True, dropout=dropout)
+        self.out = nn.Linear(hid_dim * 3, vocab_size)
 
     def forward(self, x, h, encoder_out):
         x = self.embedding(x)
 
         batch_size, encoder_len, dim = encoder_out.size()
-        prev_h = h.transpose(0,1).contiguous().view(batch_size, -1)
+        last_hidden = h[-1]
         betas = Variable(torch.zeros(batch_size, encoder_len))
         for i in range(encoder_len):
             betas[:,i] = F.softmax(self.attn(
-                torch.cat((x, prev_h, encoder_out[:,i,:]), 1)))
-        attn_weights = F.softmax(betas)
+                torch.cat((last_hidden, encoder_out[:,i,:]), 1)))
+        attn_weights = F.softmax(betas).unsqueeze(1)
 
-        c = torch.bmm(attn_weights.unsqueeze(1), encoder_out)
-        for i in range(self.n_layers):
-            c = F.relu(c)
-            c, h = self.gru(c, h)
+        context = attn_weights.bmm(encoder_out)
 
-        c = F.log_softmax(self.out(c[-1]))
-        return c, h, attn_weights
+        rnn_input = torch.cat((x.unsqueeze(1), context), 2)
+        output, hidden = self.gru(rnn_input, h)
+
+        output = F.log_softmax(self.out(
+            torch.cat((output.squeeze(1), context.squeeze(1)), 1)))
+
+        return output, hidden, attn_weights
 
 
 def train(source, target, encoder, decoder, lr, conf):
@@ -91,6 +95,7 @@ def train(source, target, encoder, decoder, lr, conf):
         dec_opt.zero_grad()
         loss = 0
 
+        x = x[:,1:] # skip <SOS>
         batch_size, max_len = x.shape
         x = Variable(torch.LongTensor(x.tolist()), volatile=False)
         y = Variable(torch.LongTensor(y.tolist()))
@@ -102,11 +107,27 @@ def train(source, target, encoder, decoder, lr, conf):
             y = y.cuda()
             enc_h = enc_h.cuda()
 
-        encoder_out, dec_h = encoder(x, enc_h, x_len)
+        encoder_out, enc_h = encoder(x, enc_h, x_len-1)
+        dec_h = enc_h[:decoder.n_layers]
 
-        for i in range(1, y.size(1)):
-            decoder_out, dec_h, attn = decoder(y[:,i-1], dec_h, encoder_out)
-            loss += utils.loss_in_batch(decoder_out, y[:,i], mask[:,i], loss_fn)
+        decoder_input = y[:, 0]
+        target_len = y.size(1)
+        use_teacher_forcing = random.random() < conf.teaching_ratio
+
+        if use_teacher_forcing:
+            for i in range(1, target_len):
+                decoder_out, dec_h, attn = decoder(decoder_input, dec_h, encoder_out)
+                loss += utils.loss_in_batch(decoder_out, y[:,i], mask[:,i], loss_fn)
+                decoder_input = y[:, i]
+
+        else:
+            for i in range(1, target_len):
+                decoder_out, dec_h, attn = decoder(decoder_input, dec_h, encoder_out)
+                loss += utils.loss_in_batch(decoder_out, y[:,i], mask[:,i], loss_fn)
+
+                topv, topi = decoder_out.data.topk(1)
+                ni = topi[:,0]
+                decoder_input = Variable(torch.LongTensor(ni.tolist()))
 
         total_loss += loss
         loss /= batch_size
@@ -118,45 +139,52 @@ def train(source, target, encoder, decoder, lr, conf):
     return total_loss.data[0] / len(source)
 
 
-def evaluate(source, target, encoder, decoder, conf, idx2char):
+def evaluate(source, target, encoder, decoder, conf, idx2char, max_len=30):
     encoder.eval()
     decoder.eval()
     loss_fn = nn.NLLLoss()
 
-    total_loss = 0
+    #total_loss = 0
     translations = []
     for batch, (x, x_len, y, mask) in enumerate(utils.batchify(
         source, target, conf.stride, 1, False)):
-        loss = 0
+        #loss = 0
 
-        batch_size, max_len = x.shape
-        x = Variable(torch.LongTensor(x.tolist()), volatile=False)
+        src = x[:,1:] # skip <SOS>
+        batch_size, src_len = src.shape
+        src = Variable(torch.LongTensor(src.tolist()), volatile=False)
         y = Variable(torch.LongTensor(y.tolist()))
 
         enc_h = encoder.init_hidden(batch_size)
 
         if conf.cuda:
-            x = x.cuda()
+            src = src.cuda()
             y = y.cuda()
             enc_h = enc_h.cuda()
 
-        encoder_out, dec_h = encoder(x, enc_h, x_len)
+        encoder_out, enc_h = encoder(src, enc_h, x_len-1)
+        dec_h = enc_h[:decoder.n_layers]
 
+        attn_matrix = torch.zeros(max_len, src_len)
         translation = ""
-        for i in range(1, y.size(1)):
-            decoder_out, dec_h, attn = decoder(y[:,i-1], dec_h, encoder_out)
-            loss += utils.loss_in_batch(decoder_out, y[:,i], mask[:,i], loss_fn)
+        char = x[:,0]
+        for i in range(1, max_len+1):
+            char = Variable(torch.LongTensor(char.tolist()))
+            decoder_out, dec_h, attn = decoder(char, dec_h, encoder_out)
+            #loss += utils.loss_in_batch(decoder_out, y[:,i], mask[:,i], loss_fn)
 
-            char = idx2char[decoder_out.data.topk(1)[1][0][0]]
-            translation += char + " "
+            attn_matrix[i-1] = attn.data[0]
+            char = decoder_out.data.topk(1)[1][:,0]
+            next_char = idx2char[char[0]]
+            translation += " " + next_char
 
-            if char == "<EOS>":
+            if next_char == "<EOS>":
                 break
 
-        total_loss += loss
-        translations.append(translation)
+        #total_loss += loss
+        translations.append(translation.strip())
 
-    return total_loss.data[0] / len(source), translations
+    return translations, attn_matrix
 
 
 def main():
@@ -183,6 +211,9 @@ def main():
             len(vocab), 
             conf.dropout)
 
+    train_source_seqs = train_source_seqs[:30]
+    train_target_seqs = train_target_seqs[:30]
+
     if conf.cuda:
         encoder.cuda()
         decoder.cuda()
@@ -195,22 +226,20 @@ def main():
                 encoder, decoder, lr, conf)
         print("Training loss: {:5.6f}".format(train_loss))
 
-        loss, translations = evaluate(train_source_seqs, train_target_seqs, 
-                encoder, decoder, conf, idx2char)
-        print("Validation loss: {:5.6f}".format(loss))
+    translations, attn_matrix = evaluate(train_source_seqs, 
+            train_target_seqs, encoder, decoder, conf, idx2char)
 
-        if epoch == conf.epochs - 1:
-            for i in range(len(train_source_seqs)):
-                print("Source\t{}".format(
-                    utils.convert2sequence(train_source_seqs[i], idx2char)))
-                print("Ref\t{}".format(
-                    utils.convert2sequence(train_target_seqs[i], idx2char)))
-                print("Output\t{}\n".format(translations[i]))
+    for i in range(len(train_source_seqs)):
+        print("Source\t{}".format(
+            utils.convert2sequence(train_source_seqs[i], idx2char)))
+        print("Ref\t{}".format(
+            utils.convert2sequence(train_target_seqs[i], idx2char)))
+        print("Output\t{}\n".format(translations[i]))
 
 
-    with open(conf.save_path+"/encoderW", "wb") as f:
+    with open(conf.save_path+"/encoderWA", "wb") as f:
         torch.save(encoder, f)
-    with open(conf.save_path+"/decoderW", "wb") as f:
+    with open(conf.save_path+"/decoderWA", "wb") as f:
         torch.save(decoder, f)
 
 

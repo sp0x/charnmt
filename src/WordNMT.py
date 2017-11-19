@@ -27,7 +27,7 @@ class Encoder(nn.Module):
                 batch_first=True, dropout=dropout, bidirectional=True)
 
     def init_hidden(self, batch_size):
-        return Variable(torch.zeros(2, batch_size, self.hid_dim))
+        return Variable(torch.zeros(self.n_layers*2, batch_size, self.hid_dim))
 
     def forward(self, x, h, seq_len):
         x = self.embedding(x)
@@ -52,15 +52,20 @@ class Decoder(nn.Module):
         self.hid_dim = hid_dim
 
         self.embedding = nn.Embedding(vocab_size, tar_emb, padding_idx=0)
+        self.enc2dec = nn.Linear(hid_dim*2, hid_dim)
         self.gru = nn.GRU(tar_emb, hid_dim, n_layers, 
-                batch_first=True, dropout=dropout, bidirectional=True)
-        self.out = nn.Linear(hid_dim*2, vocab_size)
+                batch_first=True, dropout=dropout)
+        self.out = nn.Linear(hid_dim, vocab_size)
         self.softmax = nn.LogSoftmax()
+
+    def init_hidden(self, enc_h):
+        enc_h = torch.cat((enc_h[0], enc_h[1]), 1).unsqueeze(0)
+        return self.enc2dec(enc_h)
 
     def forward(self, x, h):
         x = self.embedding(x).unsqueeze(1)
         x, h = self.gru(x, h)
-        x = self.softmax(self.out(x[-1]))
+        x = self.softmax(self.out(x[:,-1,:]))
         return x, h
 
 
@@ -89,7 +94,10 @@ def train(source, target, encoder, decoder, lr, conf):
             y = y.cuda()
             enc_h = enc_h.cuda()
 
-        encoder_out, dec_h = encoder(x, enc_h, x_len)
+        encoder_out, enc_h = encoder(x, enc_h, x_len)
+        # use last forward hidden state in encoder
+        #dec_h = enc_h[:decoder.n_layers]
+        dec_h = decoder.init_hidden(enc_h)
 
         for i in range(1, y.size(1)):
             decoder_out, dec_h = decoder(y[:,i-1], dec_h)
@@ -117,7 +125,7 @@ def evaluate(source, target, encoder, decoder, conf, idx2char):
         loss = 0
 
         batch_size, max_len = x.shape
-        x = Variable(torch.LongTensor(x.tolist()), volatile=False)
+        x = Variable(torch.LongTensor(x.tolist()), volatile=True)
         y = Variable(torch.LongTensor(y.tolist()))
 
         enc_h = encoder.init_hidden(batch_size)
@@ -127,15 +135,18 @@ def evaluate(source, target, encoder, decoder, conf, idx2char):
             y = y.cuda()
             enc_h = enc_h.cuda()
 
-        encoder_out, dec_h = encoder(x, enc_h, x_len)
+        encoder_out, enc_h = encoder(x, enc_h, x_len)
+        # use last forward hidden state in encoder
+        #dec_h = enc_h[:decoder.n_layers]
+        dec_h = decoder.init_hidden(enc_h)
 
-        translation = ""
+        translation = "<SOS>"
         for i in range(1, y.size(1)):
             decoder_out, dec_h = decoder(y[:,i-1], dec_h)
             loss += utils.loss_in_batch(decoder_out, y[:,i], mask[:,i], loss_fn)
 
             char = idx2char[decoder_out.data.topk(1)[1][0][0]]
-            translation += char + " "
+            translation += " " + char
 
             if char == "<EOS>":
                 break
@@ -170,6 +181,9 @@ def main():
             len(vocab), 
             conf.dropout)
 
+    encoder = torch.load(conf.save_path+"/encoderWb")
+    decoder = torch.load(conf.save_path+"/decoderWb")
+
     if conf.cuda:
         encoder.cuda()
         decoder.cuda()
@@ -195,9 +209,9 @@ def main():
                 print("Output\t{}\n".format(translations[i]))
 
 
-    with open(conf.save_path+"/encoderW", "wb") as f:
+    with open(conf.save_path+"/encoderWb", "wb") as f:
         torch.save(encoder, f)
-    with open(conf.save_path+"/decoderW", "wb") as f:
+    with open(conf.save_path+"/decoderWb", "wb") as f:
         torch.save(decoder, f)
 
 

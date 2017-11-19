@@ -23,12 +23,13 @@ class Config(object):
     stride = 1
     dropout = 0.5
     
-    epochs = 10
-    batch_size = 1
-    lr = 0.0001
+    epochs = 100
+    batch_size = 16
+    lr = 0.001
     log_interval = 50
     reverse_source = False
     word_level = True
+    teaching_ratio = 0.5
 
     debug_mode = True
     cuda = False
