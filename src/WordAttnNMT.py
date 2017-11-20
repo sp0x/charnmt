@@ -61,12 +61,15 @@ class Decoder(nn.Module):
                 batch_first=True, dropout=dropout)
         self.out = nn.Linear(hid_dim * 3, vocab_size)
 
-    def forward(self, x, h, encoder_out):
+    def forward(self, x, h, encoder_out, use_cuda):
         x = self.embedding(x)
 
         batch_size, encoder_len, dim = encoder_out.size()
         last_hidden = h[-1]
         betas = Variable(torch.zeros(batch_size, encoder_len))
+        if use_cuda:
+            betas = betas.cuda()
+
         for i in range(encoder_len):
             betas[:,i] = F.softmax(self.attn(
                 torch.cat((last_hidden, encoder_out[:,i,:]), 1)))
@@ -103,33 +106,38 @@ def train(source, target, encoder, decoder, lr, conf):
         y = Variable(torch.LongTensor(y.tolist()))
 
         enc_h = encoder.init_hidden(batch_size)
+        decoder_input = y[:, 0]
 
         if conf.cuda:
             x = x.cuda()
             y = y.cuda()
             enc_h = enc_h.cuda()
+            decoder_input = decoder_input.cuda()
 
         encoder_out, enc_h = encoder(x, enc_h, x_len-1)
         dec_h = enc_h[:decoder.n_layers]
 
-        decoder_input = y[:, 0]
         target_len = y.size(1)
         use_teacher_forcing = random.random() < conf.teaching_ratio
 
         if use_teacher_forcing:
             for i in range(1, target_len):
-                decoder_out, dec_h, attn = decoder(decoder_input, dec_h, encoder_out)
+                decoder_out, dec_h, attn = decoder(
+                        decoder_input, dec_h, encoder_out, conf.cuda)
                 loss += utils.loss_in_batch(decoder_out, y[:,i], mask[:,i], loss_fn)
                 decoder_input = y[:, i]
 
         else:
             for i in range(1, target_len):
-                decoder_out, dec_h, attn = decoder(decoder_input, dec_h, encoder_out)
+                decoder_out, dec_h, attn = decoder(
+                        decoder_input, dec_h, encoder_out, conf.cuda)
                 loss += utils.loss_in_batch(decoder_out, y[:,i], mask[:,i], loss_fn)
 
                 topv, topi = decoder_out.data.topk(1)
                 ni = topi[:,0]
                 decoder_input = Variable(torch.LongTensor(ni.tolist()))
+                if conf.cuda:
+                    decoder_input = decoder_input.cuda()
 
         total_loss += loss
         loss /= batch_size
@@ -172,8 +180,12 @@ def evaluate(source, target, encoder, decoder, conf, max_len=30):
         char = x[:,0]
         for i in range(1, max_len+1):
             char = Variable(torch.LongTensor(char.tolist()))
-            decoder_out, dec_h, attn = decoder(char, dec_h, encoder_out)
-            loss += utils.loss_in_batch(decoder_out, y[:,i], mask[:,i], loss_fn)
+            if conf.cuda:
+                char = char.cuda()
+
+            decoder_out, dec_h, attn = decoder(char, dec_h, encoder_out, conf.cuda)
+            if i < y.size(1):
+                loss += utils.loss_in_batch(decoder_out, y[:,i], mask[:,i], loss_fn)
 
             attn_matrix[i-1] = attn.data[0]
             char = decoder_out.data.topk(1)[1][:,0]
@@ -185,7 +197,7 @@ def evaluate(source, target, encoder, decoder, conf, max_len=30):
         total_loss += loss
         translations.append(translation)
 
-    return total_loss / len(source), translations, attn_matrix
+    return total_loss.data[0] / len(source), translations, attn_matrix
 
 
 def main():
@@ -242,6 +254,14 @@ def main():
             len(tar_vocab), 
             conf.dropout)
 
+    if conf.debug_mode:
+        train_source_seqs = train_source_seqs[:100]
+        train_target_seqs = train_target_seqs[:100]
+        dev_source_seqs = dev_source_seqs[:10]
+        dev_target_seqs = dev_target_seqs[:10]
+        test_source_seqs = train_source_seqs[:10]
+        test_target_seqs = train_target_seqs[:10]
+
     if conf.cuda:
         encoder.cuda()
         decoder.cuda()
@@ -255,10 +275,10 @@ def main():
         print("Training loss: {:5.6f}".format(train_loss))
 
         dev_loss, _, _ = evaluate(dev_source_seqs, dev_target_seqs, 
-                encoder, decoder, conf):
+                encoder, decoder, conf)
         print("Validation loss: {:5.6f}".format(dev_loss))
 
-    translations, attn_matrix = evaluate(test_source_seqs, 
+    _, translations, attn_matrix = evaluate(test_source_seqs, 
             test_target_seqs, encoder, decoder, conf)
 
     for i in range(len(test_source_seqs)):
