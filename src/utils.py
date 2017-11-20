@@ -2,6 +2,8 @@ import pickle
 import os
 import random
 import numpy as np
+import copy
+import nltk
 
 
 def build_char_vocab(filenames, word=True):
@@ -15,6 +17,8 @@ def build_char_vocab(filenames, word=True):
     @return
         vocab: dict, pairs of char tokens and their indices
         idx2char: list, mapping index to character
+
+        For word == True, return source and target languages separately
     ----------
     """
     vocab = {
@@ -24,32 +28,54 @@ def build_char_vocab(filenames, word=True):
             "<UNK>" : 3,
             }
     idx2char = ["<PAD>", "<SOS>", "<EOS>", "<UNK>"]
-    i = 0
+
+    if word:
+        thres = 5
+        src_wc = {}
+        tar_wc = {}
+
     for filename in filenames:
         with open(filename, "r", encoding="utf-8") as f:
             for line in f:
-                if i > 100:
-                    return vocab, idx2char
-                i+=1
                 source, target = line.strip().split("<JOIN>")
-                source = source[:-5].strip()
-                target = target[:-5].strip()
+                source = source[:-5].strip().lower()
+                target = target[:-5].strip().lower()
+
                 if word:
-                    seq = source + " " + target
-                    for w in seq.split(" "):
-                        if w not in vocab:
-                            vocab[w] = len(vocab)
-                            idx2char.append(w)
-                    continue
-                for c in source + target:
-                    if c not in vocab:
-                        vocab[c] = len(vocab)
-                        idx2char.append(c)
-    
+                    for w in nltk.word_tokenize(source):
+                        src_wc[w] = src_wc.get(w, 0) + 1
+
+                    for w in nltk.word_tokenize(target):
+                        tar_wc[w] = tar_wc.get(w, 0) + 1
+
+                else:
+                    for c in source + target:
+                        if c not in vocab:
+                            vocab[c] = len(vocab)
+                            idx2char.append(c)
+
+    if word:
+
+        def _trim(wc, min_count):
+            trimmed_vocab = copy.deepcopy(vocab)
+            trimmed_idx2token = copy.deepcopy(idx2char)
+
+            for w, c in wc.items():
+                if c >= min_count:
+                    trimmed_vocab[w] = len(trimmed_vocab)
+                    trimmed_idx2token.append(w)
+
+            return trimmed_vocab, trimmed_idx2token
+
+        src_vocab, src_idx2token = _trim(src_wc, thres)
+        tar_vocab, tar_idx2token = _trim(tar_wc, thres)
+
+        return src_vocab, src_idx2token, tar_vocab, tar_idx2token
+
     return vocab, idx2char
 
 
-def load_data(file_path, vocab, pickle_path, max_len, reverse_source, word=True):
+def load_data(file_path, vocab, pickle_path, max_len, reverse_source):
     """
     Load source and target language sequences, each list contains a list of 
     character indices converted from vocabulary
@@ -75,6 +101,8 @@ def load_data(file_path, vocab, pickle_path, max_len, reverse_source, word=True)
             seq[i] = list(reversed(seq[i]))
         return seq
 
+    if type(vocab) == list:
+        pickle_path = pickle_path[:-2] + "_word.p"
     if os.path.exists(pickle_path.format("source")):
         source_seqs = pickle.load(open(pickle_path.format("source"), "rb"))
         target_seqs = pickle.load(open(pickle_path.format("target"), "rb"))
@@ -89,41 +117,38 @@ def load_data(file_path, vocab, pickle_path, max_len, reverse_source, word=True)
     i = 0
     with open(file_path, "r", encoding="utf-8") as f:
         for line in f:
-            if i > 100:
-                return source_seqs, target_seqs
-            i+=1
-            source_seq = [vocab["<SOS>"]]
-            target_seq = [vocab["<SOS>"]]
+            source_seq = [1]
+            target_seq = [1]
 
             source, target = line.strip().split("<JOIN>")
-            source = source[:-5].strip()
-            target = target[:-5].strip()
+            source = source[:-5].strip().lower()
+            target = target[:-5].strip().lower()
 
-            if word:
-                for w in source.split(" "):
-                    source_seq.append(vocab[w])
-                source_seq.append(vocab["<EOS>"])
-
-                for w in target.split(" "):
-                    target_seq.append(vocab[w])
-                target_seq.append(vocab["<EOS>"])
-                
-                source_seqs.append(source_seq)
-                target_seqs.append(target_seq)
-                continue
-            
             if len(source) <= max_len:
-  
-                for c in source:
-                    source_seq.append(vocab[c])
-                source_seq.append(vocab["<EOS>"])
-    
-                for c in target:
-                    target_seq.append(vocab[c])
-                target_seq.append(vocab["<EOS>"])
 
-                source_seqs.append(source_seq)
-                target_seqs.append(target_seq)
+                if type(vocab) == list:
+                    for w in nltk.word_tokenize(source):
+                        source_seq.append(vocab[0].get(w, vocab[0]["<UNK>"]))
+                    source_seq.append(vocab[0]["<EOS>"])
+
+                    for w in nltk.word_tokenize(target):
+                        target_seq.append(vocab[1].get(w, vocab[1]["<UNK>"]))
+                    target_seq.append(vocab[1]["<EOS>"])
+                    
+                    source_seqs.append(source_seq)
+                    target_seqs.append(target_seq)
+                
+                else:
+                    for c in source:
+                        source_seq.append(vocab[c])
+                    source_seq.append(vocab["<EOS>"])
+        
+                    for c in target:
+                        target_seq.append(vocab[c])
+                    target_seq.append(vocab["<EOS>"])
+
+                    source_seqs.append(source_seq)
+                    target_seqs.append(target_seq)
 
     pickle.dump(source_seqs, open(pickle_path.format("source"), "wb"))
     pickle.dump(target_seqs, open(pickle_path.format("target"), "wb"))

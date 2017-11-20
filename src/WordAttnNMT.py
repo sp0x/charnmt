@@ -6,6 +6,8 @@ import torch.optim as optim
 from torch.nn.utils.rnn import pad_packed_sequence, pack_padded_sequence
 
 import random
+import os
+import pickle
 
 import utils
 import config
@@ -139,16 +141,16 @@ def train(source, target, encoder, decoder, lr, conf):
     return total_loss.data[0] / len(source)
 
 
-def evaluate(source, target, encoder, decoder, conf, idx2char, max_len=30):
+def evaluate(source, target, encoder, decoder, conf, max_len=30):
     encoder.eval()
     decoder.eval()
     loss_fn = nn.NLLLoss()
 
-    #total_loss = 0
+    total_loss = 0
     translations = []
     for batch, (x, x_len, y, mask) in enumerate(utils.batchify(
         source, target, conf.stride, 1, False)):
-        #loss = 0
+        loss = 0
 
         src = x[:,1:] # skip <SOS>
         batch_size, src_len = src.shape
@@ -166,53 +168,79 @@ def evaluate(source, target, encoder, decoder, conf, idx2char, max_len=30):
         dec_h = enc_h[:decoder.n_layers]
 
         attn_matrix = torch.zeros(max_len, src_len)
-        translation = ""
+        translation = [1]
         char = x[:,0]
         for i in range(1, max_len+1):
             char = Variable(torch.LongTensor(char.tolist()))
             decoder_out, dec_h, attn = decoder(char, dec_h, encoder_out)
-            #loss += utils.loss_in_batch(decoder_out, y[:,i], mask[:,i], loss_fn)
+            loss += utils.loss_in_batch(decoder_out, y[:,i], mask[:,i], loss_fn)
 
             attn_matrix[i-1] = attn.data[0]
             char = decoder_out.data.topk(1)[1][:,0]
-            next_char = idx2char[char[0]]
-            translation += " " + next_char
+            translation.append(char[0])
 
-            if next_char == "<EOS>":
+            if char[0] == 2:
                 break
 
-        #total_loss += loss
-        translations.append(translation.strip())
+        total_loss += loss
+        translations.append(translation)
 
-    return translations, attn_matrix
+    return total_loss / len(source), translations, attn_matrix
 
 
 def main():
     conf = config.Config()
-    vocab, idx2char = utils.build_char_vocab(
-            [conf.train_path, conf.dev_path, conf.test_path], conf.word_level)
+
+    if os.path.exists(conf.data_path + "/src_vocab.p"):
+        src_vocab = pickle.load(open(conf.data_path + "/src_vocab.p", "rb"))
+        tar_vocab = pickle.load(open(conf.data_path + "/tar_vocab.p", "rb"))
+        src_idx2token = pickle.load(open(conf.data_path + "/src_idx2token.p", "rb"))
+        tar_idx2token = pickle.load(open(conf.data_path + "/tar_idx2token.p", "rb"))
+    else:
+        src_vocab, src_idx2token, tar_vocab, tar_idx2token = utils.build_char_vocab(
+                [conf.train_path, conf.dev_path, conf.test_path], True)
+        pickle.dump(src_vocab, open(conf.data_path + "/src_vocab.p", "wb"))
+        pickle.dump(tar_vocab, open(conf.data_path + "/tar_vocab.p", "wb"))
+        pickle.dump(src_idx2token, open(conf.data_path + "/src_idx2token.p", "wb"))
+        pickle.dump(tar_idx2token, open(conf.data_path + "/tar_idx2token.p", "wb"))
+    
+    print("src vocab = {}\ntar vocab = {}".format(len(src_vocab), len(tar_vocab)))
+
 
     train_source_seqs, train_target_seqs = utils.load_data(
             conf.train_path, 
-            vocab, 
+            [src_vocab, tar_vocab], 
             conf.train_pickle,
             conf.max_seq_len, 
-            conf.reverse_source, 
-            conf.word_level)
+            conf.reverse_source)
+
+    dev_source_seqs, dev_target_seqs = utils.load_data(
+            conf.dev_path, 
+            [src_vocab, tar_vocab], 
+            conf.dev_pickle,
+            conf.max_seq_len, 
+            conf.reverse_source)
+
+    test_source_seqs, test_target_seqs = utils.load_data(
+            conf.test_path, 
+            [src_vocab, tar_vocab], 
+            conf.test_pickle,
+            conf.max_seq_len, 
+            conf.reverse_source)
+
+    print("Training set = {}\nValidation set = {}\nTest set = {}".format(
+        len(train_source_seqs), len(dev_source_seqs), len(test_source_seqs)))
 
     encoder = Encoder(
             conf.source_emb, 
             conf.hid_dim, 
-            len(vocab), 
+            len(src_vocab), 
             conf.dropout)
     decoder = Decoder(
             conf.target_emb, 
             conf.hid_dim, 
-            len(vocab), 
+            len(tar_vocab), 
             conf.dropout)
-
-    train_source_seqs = train_source_seqs[:30]
-    train_target_seqs = train_target_seqs[:30]
 
     if conf.cuda:
         encoder.cuda()
@@ -226,15 +254,20 @@ def main():
                 encoder, decoder, lr, conf)
         print("Training loss: {:5.6f}".format(train_loss))
 
-    translations, attn_matrix = evaluate(train_source_seqs, 
-            train_target_seqs, encoder, decoder, conf, idx2char)
+        dev_loss, _, _ = evaluate(dev_source_seqs, dev_target_seqs, 
+                encoder, decoder, conf):
+        print("Validation loss: {:5.6f}".format(dev_loss))
 
-    for i in range(len(train_source_seqs)):
+    translations, attn_matrix = evaluate(test_source_seqs, 
+            test_target_seqs, encoder, decoder, conf)
+
+    for i in range(len(test_source_seqs)):
         print("Source\t{}".format(
-            utils.convert2sequence(train_source_seqs[i], idx2char)))
+            utils.convert2sequence(test_source_seqs[i], src_idx2token)))
         print("Ref\t{}".format(
-            utils.convert2sequence(train_target_seqs[i], idx2char)))
-        print("Output\t{}\n".format(translations[i]))
+            utils.convert2sequence(test_target_seqs[i], tar_idx2token)))
+        print("Output\t{}\n".format(
+            utils.convert2sequence(translations[i], tar_idx2token)))
 
 
     with open(conf.save_path+"/encoderWA", "wb") as f:
