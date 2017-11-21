@@ -179,8 +179,8 @@ def batchify(data, label, stride, batch_size=None, shuffle=False):
         start = i * batch_size
         indices = order[start: start+batch_size]
 
-        padded_data, src_len = pad_data(data[indices], stride)
-        padded_label, label_mask = pad_label(label[indices])
+        padded_data, src_len, idx = pad_data(data[indices], stride)
+        padded_label, label_mask = pad_label(label[indices][idx])
         
         yield padded_data, src_len, padded_label, label_mask
             
@@ -198,6 +198,8 @@ def pad_data(batch_data, stride):
         
     @return 
         padded_data: numpy array, same format as batch_data, but padded
+        seq_len: numpy array, the lengths of each sequence
+        order: numpy array, the indices of items which are sorted descendantly
     ----------
     """
     lens = [len(data) for data in batch_data]
@@ -218,7 +220,7 @@ def pad_data(batch_data, stride):
 
     order = np.flip(np.argsort(seq_len), 0) # sort descendantly
 
-    return padded_data[order], np.array(seq_len)[order]
+    return padded_data[order], np.array(seq_len)[order], order
     
 
 def pad_label(batch_label):
@@ -254,8 +256,13 @@ def pad_label(batch_label):
 
 
 def convert2sequence(seq, idx2char, delimit=" "):
-    seq = [idx2char[i] for i in seq]
-    return delimit.join(seq)
+    output = []
+    for i in seq:
+        output.append(idx2char[i])
+        if i == 2:
+            break
+
+    return delimit.join(output)
 
 
 def loss_in_batch(output, label, mask, loss_fn):
