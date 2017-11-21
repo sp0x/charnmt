@@ -278,7 +278,7 @@ def main():
         print("*** Epoch [{:5d}] lr = {} ***".format(epoch, lr))
 
         train_loss = train(train_source_seqs, train_target_seqs, 
-                encoder, decoder, lr, conf)
+                encoder, decoder, lr, conf, [src_idx2token, tar_idx2token])
         print("Training loss: {:5.6f}".format(train_loss))
 
         ## TODO: add BLEU score
