@@ -99,25 +99,25 @@ def train(source, target, encoder, decoder, lr, conf):
         dec_opt.zero_grad()
         loss = 0
 
-        src = x[:,1:] # skip <SOS>
-        batch_size, src_len = src.shape
-        src = Variable(torch.LongTensor(src.tolist()), volatile=False)
+        x = x[:,1:] # skip <SOS>
+        batch_size, src_len = x.shape
+        x = Variable(torch.LongTensor(x.tolist()), volatile=False)
         y = Variable(torch.LongTensor(y.tolist()))
 
         enc_h = encoder.init_hidden(batch_size)
-        decoder_input = y[:, 0:1]
 
         if conf.cuda:
-            src = src.cuda()
+            x = x.cuda()
             y = y.cuda()
             enc_h = enc_h.cuda()
 
-        encoder_out, enc_h = encoder(src, enc_h, x_len-1)
+        encoder_out, enc_h = encoder(x, enc_h, x_len-1)
         # use last forward hidden state in encoder
         dec_h = enc_h[:decoder.n_layers]
         #dec_h = decoder.init_hidden(enc_h)
 
         target_len = y.size(1)
+        decoder_input = y[:, 0:1]
 
         # Scheduled sampling
         use_teacher_forcing = random.random() < conf.teaching_ratio
