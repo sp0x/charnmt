@@ -7,3 +7,4 @@ data/*
 *.DS_Store
 src/__pycache__
 src/.spyproject
+*.s
