@@ -196,9 +196,9 @@ def evaluate(source, target, encoder, decoder, conf, max_len=50):
 
             word = decoder_out.data.topk(1)[1]
             start = batch * conf.batch_size
-            translations[:,i-1:i] = word.numpy()
+            translations[:,i-1:i] = word.cpu().numpy()
 
-        yield x, y.data.numpy(), translations
+        yield x, y.data.cpu().numpy(), translations
 
 
 def main():
@@ -268,6 +268,13 @@ def main():
         dev_target_seqs = dev_target_seqs[:10]
         test_source_seqs = train_source_seqs
         test_target_seqs = train_target_seqs
+    else:
+        n = 0 % 21
+        size = 10000
+        start = n * size
+        train_source_seqs = train_source_seqs[start:start+size]
+        train_target_seqs = train_target_seqs[start:start+size]
+        
 
     if conf.cuda:
         encoder.cuda()
