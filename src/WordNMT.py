@@ -139,14 +139,14 @@ def train(source, target, encoder, decoder, lr, conf):
                 if conf.cuda:
                     decoder_input = decoder_input.cuda()
 
-        total_loss += loss
+        total_loss += loss.data[0]
         loss /= batch_size
         loss.backward()
 
         enc_opt.step()
         dec_opt.step()
 
-    return total_loss.data[0] / len(source)
+    return total_loss / len(source)
 
 
 def evaluate(source, target, encoder, decoder, conf, max_len=50):
@@ -220,7 +220,6 @@ def main():
     
     print("src vocab = {}\ntar vocab = {}".format(len(src_vocab), len(tar_vocab)))
 
-
     train_source_seqs, train_target_seqs = utils.load_data(
             conf.train_path, 
             [src_vocab, tar_vocab], 
@@ -234,16 +233,8 @@ def main():
             conf.dev_pickle,
             conf.max_seq_len, 
             conf.reverse_source)
-
-    test_source_seqs, test_target_seqs = utils.load_data(
-            conf.test_path, 
-            [src_vocab, tar_vocab], 
-            conf.test_pickle,
-            conf.max_seq_len, 
-            conf.reverse_source)
-
-    print("Training set = {}\nValidation set = {}\nTest set = {}".format(
-        len(train_source_seqs), len(dev_source_seqs), len(test_source_seqs)))
+    print("Training set = {}\nValidation set = {}".format(
+        len(train_source_seqs), len(dev_source_seqs)))
 
     # Define/Load models
     if os.path.exists(conf.save_path+"/encoderW") and not conf.debug_mode:
@@ -269,12 +260,12 @@ def main():
         test_source_seqs = train_source_seqs
         test_target_seqs = train_target_seqs
     else:
-        n = 0 % 21
-        size = 10000
+        # split large corpus to fit memory
+        size = 70000
+        n = 0 % (int(np.ceil(len(train_source_seqs)/size)))
         start = n * size
         train_source_seqs = train_source_seqs[start:start+size]
         train_target_seqs = train_target_seqs[start:start+size]
-        
 
     if conf.cuda:
         encoder.cuda()
@@ -293,6 +284,17 @@ def main():
         #        encoder, decoder, conf)
         #print
 
+    if not conf.debug_mode:
+        test_source_seqs, test_target_seqs = utils.load_data(
+                conf.test_path, 
+                [src_vocab, tar_vocab], 
+                conf.test_pickle,
+                conf.max_seq_len, 
+                conf.reverse_source)
+
+        del train_source_seqs, train_target_seqs
+        del dev_source_seqs, dev_target_seqs
+        del src_vocab, tar_vocab
 
     for _, (src, ref, out) in enumerate(evaluate(
         test_source_seqs, test_target_seqs, encoder, decoder, conf)):
