@@ -261,11 +261,11 @@ def main():
         test_target_seqs = train_target_seqs
     else:
         # split large corpus to fit memory
-        size = 70000
+        size = 10000
         n = 0 % (int(np.ceil(len(train_source_seqs)/size)))
         start = n * size
-        train_source_seqs = train_source_seqs[start:start+size]
-        train_target_seqs = train_target_seqs[start:start+size]
+        train_source_seqs = train_source_seqs[start:]
+        train_target_seqs = train_target_seqs[start:]
 
     if conf.cuda:
         encoder.cuda()

@@ -20,6 +20,7 @@ class Config(object):
     max_seq_len = 450
     source_emb = 128
     target_emb = 512
+    n_gram_size = 1000
     hid_dim = 300
     stride = 1
     dropout = 0.5
