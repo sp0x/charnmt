@@ -1,4 +1,5 @@
 import os
+import torch
 
 
 class Config(object):
@@ -24,7 +25,7 @@ class Config(object):
     dropout = 0.5
     
     epochs = 100
-    batch_size = 16
+    batch_size = 32
     lr = 0.001
     log_interval = 50
     reverse_source = False
@@ -32,4 +33,5 @@ class Config(object):
     teaching_ratio = 0.5
 
     debug_mode = True
-    cuda = False
+    cuda = torch.cuda.is_available()
+

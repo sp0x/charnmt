@@ -8,6 +8,7 @@ from torch.nn.utils.rnn import pad_packed_sequence, pack_padded_sequence
 import random
 import os
 import pickle
+import numpy as np
 
 import utils
 import config
@@ -72,21 +73,32 @@ class Decoder(nn.Module):
 
         for i in range(encoder_len):
             betas[:,i] = F.softmax(self.attn(
-                torch.cat((last_hidden, encoder_out[:,i,:]), 1)))
-        attn_weights = F.softmax(betas).unsqueeze(1)
+                torch.cat((last_hidden, encoder_out[:,i,:]), dim=1)))
+        attn_weights = F.softmax(betas).unsqueeze(dim=1)
 
         context = attn_weights.bmm(encoder_out)
 
-        rnn_input = torch.cat((x.unsqueeze(1), context), 2)
+        rnn_input = torch.cat((x, context), dim=2)
         output, hidden = self.gru(rnn_input, h)
 
         output = F.log_softmax(self.out(
-            torch.cat((output.squeeze(1), context.squeeze(1)), 1)))
+            torch.cat((output.squeeze(dim=1), context.squeeze(dim=1)), dim=1)))
 
         return output, hidden, attn_weights
 
 
 def train(source, target, encoder, decoder, lr, conf):
+    """
+    ----------
+    @params
+        source: list of list, sequences of source language
+        target: list of list, sequences of target language
+        encoder: Encoder, object of encoder in NMT
+        decoder: Decoder, object of decoder in NMT
+        lr: float, learning rate
+        conf: Config, wraps anything needed
+    ----------
+    """
     encoder.train()
     decoder.train()
     enc_opt = optim.Adam(encoder.parameters(), lr=lr)
@@ -101,68 +113,78 @@ def train(source, target, encoder, decoder, lr, conf):
         loss = 0
 
         x = x[:,1:] # skip <SOS>
-        batch_size, max_len = x.shape
+        batch_size, src_len = x.shape
         x = Variable(torch.LongTensor(x.tolist()), volatile=False)
         y = Variable(torch.LongTensor(y.tolist()))
 
         enc_h = encoder.init_hidden(batch_size)
-        decoder_input = y[:, 0]
 
         if conf.cuda:
             x = x.cuda()
             y = y.cuda()
             enc_h = enc_h.cuda()
-            decoder_input = decoder_input.cuda()
 
         encoder_out, enc_h = encoder(x, enc_h, x_len-1)
+        # use last forward hidden state in encoder
         dec_h = enc_h[:decoder.n_layers]
+        #dec_h = decoder.init_hidden(enc_h)
 
         target_len = y.size(1)
+        decoder_input = y[:, 0:1]
+
+        # Scheduled sampling
         use_teacher_forcing = random.random() < conf.teaching_ratio
 
         if use_teacher_forcing:
             for i in range(1, target_len):
-                decoder_out, dec_h, attn = decoder(
-                        decoder_input, dec_h, encoder_out, conf.cuda)
+                decoder_out, dec_h, ATT = decoder(decoder_input, dec_h, encoder_out, conf.cuda)
                 loss += utils.loss_in_batch(decoder_out, y[:,i], mask[:,i], loss_fn)
-                decoder_input = y[:, i]
+                decoder_input = y[:, i:i+1]
 
         else:
             for i in range(1, target_len):
-                decoder_out, dec_h, attn = decoder(
-                        decoder_input, dec_h, encoder_out, conf.cuda)
+                decoder_out, dec_h, ATT = decoder(decoder_input, dec_h, encoder_out, conf.cuda)
                 loss += utils.loss_in_batch(decoder_out, y[:,i], mask[:,i], loss_fn)
 
                 topv, topi = decoder_out.data.topk(1)
-                ni = topi[:,0]
+                ni = topi[:,:1]
                 decoder_input = Variable(torch.LongTensor(ni.tolist()))
                 if conf.cuda:
                     decoder_input = decoder_input.cuda()
 
-        total_loss += loss
+        total_loss += loss.data[0]
         loss /= batch_size
         loss.backward()
 
         enc_opt.step()
         dec_opt.step()
 
-    return total_loss.data[0] / len(source)
+    return total_loss / len(source)
 
 
-def evaluate(source, target, encoder, decoder, conf, max_len=30):
+def evaluate(source, target, encoder, decoder, conf, max_len=50):
+    """
+    ----------
+    @params
+        source: list of list, sequences of source language
+        target: list of list, sequences of target language
+        encoder: Encoder, object of encoder in NMT
+        decoder: Decoder, object of decoder in NMT
+        conf: Config, wraps anything needed
+        max_len: int, max length of generated translation
+    ----------
+    """
     encoder.eval()
     decoder.eval()
     loss_fn = nn.NLLLoss()
 
-    total_loss = 0
-    translations = []
     for batch, (x, x_len, y, mask) in enumerate(utils.batchify(
-        source, target, conf.stride, 1, False)):
-        loss = 0
+        source, target, conf.stride, conf.batch_size, False)):
 
         src = x[:,1:] # skip <SOS>
         batch_size, src_len = src.shape
-        src = Variable(torch.LongTensor(src.tolist()), volatile=False)
+        translations = np.zeros([batch_size, max_len], dtype=int)
+        src = Variable(torch.LongTensor(src.tolist()), volatile=True)
         y = Variable(torch.LongTensor(y.tolist()))
 
         enc_h = encoder.init_hidden(batch_size)
@@ -173,36 +195,29 @@ def evaluate(source, target, encoder, decoder, conf, max_len=30):
             enc_h = enc_h.cuda()
 
         encoder_out, enc_h = encoder(src, enc_h, x_len-1)
+        # use last forward hidden state in encoder
         dec_h = enc_h[:decoder.n_layers]
+        #dec_h = decoder.init_hidden(enc_h)
 
-        attn_matrix = torch.zeros(max_len, src_len)
-        translation = [1]
-        char = x[:,0]
+        word = x[:,:1]
         for i in range(1, max_len+1):
-            char = Variable(torch.LongTensor(char.tolist()))
+            word = Variable(torch.LongTensor(word.tolist()))
             if conf.cuda:
-                char = char.cuda()
+                word = word.cuda()
 
-            decoder_out, dec_h, attn = decoder(char, dec_h, encoder_out, conf.cuda)
-            if i < y.size(1):
-                loss += utils.loss_in_batch(decoder_out, y[:,i], mask[:,i], loss_fn)
+            decoder_out, dec_h, ATT = decoder(word, dec_h, encoder_out, conf.cuda)
 
-            attn_matrix[i-1] = attn.data[0]
-            char = decoder_out.data.topk(1)[1][:,0]
-            translation.append(char[0])
+            word = decoder_out.data.topk(1)[1]
+            start = batch * conf.batch_size
+            translations[:,i-1:i] = word.cpu().numpy()
 
-            if char[0] == 2:
-                break
-
-        total_loss += loss
-        translations.append(translation)
-
-    return total_loss.data[0] / len(source), translations, attn_matrix
+        yield x, y.data.cpu().numpy(), translations
 
 
 def main():
     conf = config.Config()
 
+    # Load data
     if os.path.exists(conf.data_path + "/src_vocab.p"):
         src_vocab = pickle.load(open(conf.data_path + "/src_vocab.p", "rb"))
         tar_vocab = pickle.load(open(conf.data_path + "/tar_vocab.p", "rb"))
@@ -218,7 +233,6 @@ def main():
     
     print("src vocab = {}\ntar vocab = {}".format(len(src_vocab), len(tar_vocab)))
 
-
     train_source_seqs, train_target_seqs = utils.load_data(
             conf.train_path, 
             [src_vocab, tar_vocab], 
@@ -232,35 +246,39 @@ def main():
             conf.dev_pickle,
             conf.max_seq_len, 
             conf.reverse_source)
+    print("Training set = {}\nValidation set = {}".format(
+        len(train_source_seqs), len(dev_source_seqs)))
 
-    test_source_seqs, test_target_seqs = utils.load_data(
-            conf.test_path, 
-            [src_vocab, tar_vocab], 
-            conf.test_pickle,
-            conf.max_seq_len, 
-            conf.reverse_source)
-
-    print("Training set = {}\nValidation set = {}\nTest set = {}".format(
-        len(train_source_seqs), len(dev_source_seqs), len(test_source_seqs)))
-
-    encoder = Encoder(
-            conf.source_emb, 
-            conf.hid_dim, 
-            len(src_vocab), 
-            conf.dropout)
-    decoder = Decoder(
-            conf.target_emb, 
-            conf.hid_dim, 
-            len(tar_vocab), 
-            conf.dropout)
+    # Define/Load models
+    if os.path.exists(conf.save_path+"/encoderW") and not conf.debug_mode:
+        encoder = torch.load(conf.save_path+"/encoderW")
+        decoder = torch.load(conf.save_path+"/decoderW")
+    else:
+        encoder = Encoder(
+                conf.source_emb, 
+                conf.hid_dim, 
+                len(src_vocab), 
+                conf.dropout)
+        decoder = Decoder(
+                conf.target_emb, 
+                conf.hid_dim, 
+                len(tar_vocab), 
+                conf.dropout)
 
     if conf.debug_mode:
         train_source_seqs = train_source_seqs[:100]
         train_target_seqs = train_target_seqs[:100]
         dev_source_seqs = dev_source_seqs[:10]
         dev_target_seqs = dev_target_seqs[:10]
-        test_source_seqs = train_source_seqs[:10]
-        test_target_seqs = train_target_seqs[:10]
+        test_source_seqs = train_source_seqs
+        test_target_seqs = train_target_seqs
+    else:
+        # split large corpus to fit memory
+        size = 70000
+        n = 0 % (int(np.ceil(len(train_source_seqs)/size)))
+        start = n * size
+        train_source_seqs = train_source_seqs[start:start+size]
+        train_target_seqs = train_target_seqs[start:start+size]
 
     if conf.cuda:
         encoder.cuda()
@@ -274,25 +292,39 @@ def main():
                 encoder, decoder, lr, conf)
         print("Training loss: {:5.6f}".format(train_loss))
 
-        dev_loss, _, _ = evaluate(dev_source_seqs, dev_target_seqs, 
-                encoder, decoder, conf)
-        print("Validation loss: {:5.6f}".format(dev_loss))
+        ## TODO: add BLEU score
+        #translations = evaluate(train_source_seqs, train_target_seqs, 
+        #        encoder, decoder, conf)
+        #print
 
-    _, translations, attn_matrix = evaluate(test_source_seqs, 
-            test_target_seqs, encoder, decoder, conf)
+    if not conf.debug_mode:
+        test_source_seqs, test_target_seqs = utils.load_data(
+                conf.test_path, 
+                [src_vocab, tar_vocab], 
+                conf.test_pickle,
+                conf.max_seq_len, 
+                conf.reverse_source)
 
-    for i in range(len(test_source_seqs)):
-        print("Source\t{}".format(
-            utils.convert2sequence(test_source_seqs[i], src_idx2token)))
-        print("Ref\t{}".format(
-            utils.convert2sequence(test_target_seqs[i], tar_idx2token)))
-        print("Output\t{}\n".format(
-            utils.convert2sequence(translations[i], tar_idx2token)))
+        del train_source_seqs, train_target_seqs
+        del dev_source_seqs, dev_target_seqs
+        del src_vocab, tar_vocab
+
+    for _, (src, ref, out) in enumerate(evaluate(
+        test_source_seqs, test_target_seqs, encoder, decoder, conf)):
+        for i in range(len(src)):
+            print("Source\t{}".format(
+                utils.convert2sequence(src[i], src_idx2token)))
+            print("Ref\t{}".format(
+                utils.convert2sequence(ref[i], tar_idx2token)))
+            print("Output\t{}\n".format(
+                utils.convert2sequence(out[i], tar_idx2token)))
+
+            ## TODO: add BLEU score
 
 
-    with open(conf.save_path+"/encoderWA", "wb") as f:
+    with open(conf.save_path+"/encoderW", "wb") as f:
         torch.save(encoder, f)
-    with open(conf.save_path+"/decoderWA", "wb") as f:
+    with open(conf.save_path+"/decoderW", "wb") as f:
         torch.save(decoder, f)
 
 
