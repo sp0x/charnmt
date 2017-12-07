@@ -11,6 +11,7 @@ import pickle
 import numpy as np
 
 import utils
+import eval
 import config
 
 
@@ -292,10 +293,21 @@ def main():
                 encoder, decoder, lr, conf)
         print("Training loss: {:5.6f}".format(train_loss))
 
-        ## TODO: add BLEU score
-        #translations = evaluate(train_source_seqs, train_target_seqs, 
-        #        encoder, decoder, conf)
-        #print
+        ## BLEU score
+        bleu_epoch = []
+        for j, (src_trn, ref_trn, out_trn) in enumerate(evaluate(train_source_seqs, train_target_seqs,
+                                                       encoder, decoder, conf)):
+            for i in range(len(src_trn)):
+
+                bleu_trn = eval.BLEU([utils.convert2sequence(out_trn[i], tar_idx2token)],
+                                     [utils.convert2sequence(ref_trn[i], tar_idx2token)[6:-6]])
+                # print('Bleu Score =', bleu_trn)
+                bleu_epoch.append(bleu_trn)
+
+        bleu = sum(bleu_epoch) / len(bleu_epoch)
+        print('Bleu Score =', bleu)
+
+
 
     if not conf.debug_mode:
         test_source_seqs, test_target_seqs = utils.load_data(
@@ -319,7 +331,10 @@ def main():
             print("Output\t{}\n".format(
                 utils.convert2sequence(out[i], tar_idx2token)))
 
-            ## TODO: add BLEU score
+            ## BLEU score
+            bleu_score = eval.BLEU([utils.convert2sequence(out[i], tar_idx2token)],
+                                   [utils.convert2sequence(ref[i], tar_idx2token)[6:-6]])
+            print('Bleu Score =', bleu_score)
 
 
     with open(conf.save_path+"/encoderW", "wb") as f:

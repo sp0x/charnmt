@@ -8,6 +8,8 @@ data/*
 src/__pycache__
 src/.spyproject
 *.s
+*.sh
+*saver*
 *.idea
 *scratch*
 *.ipynb_checkpoints

@@ -153,7 +153,7 @@ def BLEU(candidate, references):
 if __name__ == "__main__":
     candidate, references = fetch_data("../data/eval/candidate.txt", "../data/eval/references")
     bleu = BLEU(candidate, references)
-    print(bleu)
+    print('BLEU Score =', bleu)
     out = open('bleu_out.txt', 'w')
     out.write(str(bleu))
     out.close()
