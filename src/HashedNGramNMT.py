@@ -26,7 +26,9 @@ class N_Gram_Embedding(nn.Module):
         n_grams = []
         for i in range(1, 1+self.n):
             n_grams += [self._hash(word[j:j+i]) for j in range(len(word)-i+1)]
-        return Variable(torch.LongTensor(n_grams))
+
+        n_grams = Variable(torch.LongTensor(n_grams))
+        return n_grams
 
 
     def _hash(self, word):
@@ -39,17 +41,22 @@ class N_Gram_Embedding(nn.Module):
         """
         batch_size, seq_len = word_idx.size()
         embeddings = Variable(torch.zeros(batch_size, seq_len, self.emb_size))
+        if word_idx.is_cuda:
+            embeddings = embeddings.cuda()
 
         for b in range(batch_size):
             for i in range(seq_len):
-                wi = word_idx[b,i].data.numpy()[0]
+                wi = word_idx[b,i].data.cpu().numpy()[0]
                 if wi < 4:
                     embeddings[b,i,:] = self.embedding(
                             word_idx[b,i].view(1,1)).squeeze()
                 else:
                     word = self.vocab[wi]
-                    embeddings[b,i,:] = self.embedding(
-                            self._get_n_grams(word)).mean(0)
+                    n_grams = self._get_n_grams(word)
+                    if word_idx.is_cuda:
+                        n_grams = n_grams.cuda()
+                    n_gram_emb = self.embedding(n_grams).mean(0)
+                    embeddings[b,i,:] = n_gram_emb
 
         return embeddings
 
@@ -121,9 +128,9 @@ def main():
         len(train_source_seqs), len(dev_source_seqs)))
 
     # Define/Load models
-    if os.path.exists(conf.save_path+"/encoderW") and not conf.debug_mode:
-        encoder = torch.load(conf.save_path+"/encoderW")
-        decoder = torch.load(conf.save_path+"/decoderW")
+    if os.path.exists(conf.save_path+"/encoderH") and not conf.debug_mode:
+        encoder = torch.load(conf.save_path+"/encoderH")
+        decoder = torch.load(conf.save_path+"/decoderH")
     else:
         encoder = Encoder(
                 conf.source_emb, 
@@ -194,9 +201,9 @@ def main():
             ## TODO: add BLEU score
 
 
-    with open(conf.save_path+"/encoderW", "wb") as f:
+    with open(conf.save_path+"/encoderH", "wb") as f:
         torch.save(encoder, f)
-    with open(conf.save_path+"/decoderW", "wb") as f:
+    with open(conf.save_path+"/decoderH", "wb") as f:
         torch.save(decoder, f)
 
 
