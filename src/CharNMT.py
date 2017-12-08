@@ -65,7 +65,7 @@ class Encoder(nn.Module):
         # half convolution with 8-grams
         self.n_filters = [200, 200, 250, 250, 300, 300, 300, 300]
         for i in range(len(self.n_filters)):
-            conv2d = nn.Conv2d(1, self.n_filters[i], (i+1, src_emb), padding=(i, 0), bias=False)
+            conv2d = nn.Conv2d(1, self.n_filters[i], (i+1, src_emb), padding=(i, 0), bias=True)
             setattr(self, "conv_layer{}".format(i+1), conv2d)
 
         # number of layers in highway network
@@ -210,6 +210,7 @@ class Encoder(nn.Module):
                with dimension (batch_size, seq_len, feature)
         ----------
         """
+        self.rnn_encoder.flatten_parameters()
         return self.rnn_encoder(x, h)
 
 
@@ -347,10 +348,10 @@ def lr_schedule(t):
     learning rate schedule, use piecewise
     """
     if t < 10:
-        return 0.01
+        return 0.001
 
     if t < 50:
-        return 0.001
+        return 0.0005
 
     return 0.0001
 
@@ -438,8 +439,8 @@ def main():
                                                        encoder, decoder, conf)):
             for i in range(len(src_trn)):
 
-                out_seq = utils.convert2sequence(out_trn[i], idx2char)[: -6]
-                ref_seq = utils.convert2sequence(ref_trn[i], idx2char)[6:-6]
+                out_seq = utils.convert2sequence(out_trn[i], idx2char, "")[: -6]
+                ref_seq = utils.convert2sequence(ref_trn[i], idx2char, "")[6:-6]
 
                 bleu_trn = eval.BLEU(out_seq, ref_seq, bleu_n)
 
@@ -467,17 +468,17 @@ def main():
         del dev_source_seqs, dev_target_seqs
 
     bleus = []
-    for _, (src, ref, out) in enumerate(evaluate(
+    for _, (src, ref_trn, out_trn) in enumerate(evaluate(
         test_source_seqs, test_target_seqs, best_encoder, best_decoder, conf)):
         for i in range(len(src)):
             ## BLEU score
-            out_seq = utils.convert2sequence(out_trn[i], idx2char)[: -6]
-            ref_seq = utils.convert2sequence(ref_trn[i], idx2char)[6:-6]
+            out_seq = utils.convert2sequence(out_trn[i], idx2char, "")[: -6]
+            ref_seq = utils.convert2sequence(ref_trn[i], idx2char, "")[6:-6]
 
             bleu = eval.BLEU(out_seq, ref_seq, bleu_n)
 
             print("Source\t{}".format(
-                utils.convert2sequence(src[i], idx2char)))
+                utils.convert2sequence(src[i], idx2char, "")))
             print("Ref\t{}".format(ref_seq))
             print("Output\t{}\n".format(out_seq))
             print('Bleu_' + str(bleu_n) + ' Score =', bleu)

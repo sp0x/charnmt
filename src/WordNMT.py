@@ -321,7 +321,7 @@ def main():
         del src_vocab, tar_vocab
 
     bleus = []
-    for _, (src, ref, out) in enumerate(evaluate(
+    for _, (src, ref_trn, out_trn) in enumerate(evaluate(
         test_source_seqs, test_target_seqs, best_encoder, best_decoder, conf)):
         for i in range(len(src)):
             ## BLEU score

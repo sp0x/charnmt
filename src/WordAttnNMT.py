@@ -81,6 +81,7 @@ class Decoder(nn.Module):
         context = attn_weights.bmm(encoder_out)
 
         rnn_input = torch.cat((x, context), dim=2)
+        self.gru.flatten_parameters()
         output, hidden = self.gru(rnn_input, h)
 
         output = F.log_softmax(self.out(
@@ -338,7 +339,7 @@ def main():
         del src_vocab, tar_vocab
 
     bleus = []
-    for _, (src, ref, out) in enumerate(evaluate(
+    for _, (src, ref_trn, out_trn) in enumerate(evaluate(
         test_source_seqs, test_target_seqs, best_encoder, best_decoder, conf)):
         for i in range(len(src)):
             ## BLEU score

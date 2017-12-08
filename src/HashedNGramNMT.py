@@ -92,6 +92,7 @@ class Encoder(nn.Module):
         x = self.embedding(x)
 
         packed_seq = pack_padded_sequence(x, seq_len, batch_first=True)
+        self.gru.flatten_parameters()
         output, h = self.gru(packed_seq, h)
         output, out_len = pad_packed_sequence(output, True)
 
@@ -218,7 +219,7 @@ def main():
         del src_vocab, tar_vocab
 
     bleus = []
-    for _, (src, ref, out) in enumerate(evaluate(
+    for _, (src, ref_trn, out_trn) in enumerate(evaluate(
         test_source_seqs, test_target_seqs, best_encoder, best_decoder, conf)):
         for i in range(len(src)):
             ## BLEU score
