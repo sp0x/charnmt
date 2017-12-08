@@ -286,6 +286,7 @@ def main():
         decoder.cuda()
 
     lr = conf.lr
+    bleu_n = conf.bleu_n
     for epoch in range(conf.epochs):
         print("*** Epoch [{:5d}] lr = {} ***".format(epoch, lr))
 
@@ -299,13 +300,15 @@ def main():
                                                        encoder, decoder, conf)):
             for i in range(len(src_trn)):
 
-                bleu_trn = eval.BLEU([utils.convert2sequence(out_trn[i], tar_idx2token)],
-                                     [utils.convert2sequence(ref_trn[i], tar_idx2token)[6:-6]])
-                # print('Bleu Score =', bleu_trn)
+                out_seq = utils.convert2sequence(out_trn[i], tar_idx2token)[: -6]
+                ref_seq = utils.convert2sequence(ref_trn[i], tar_idx2token)[6:-6]
+
+                bleu_trn = eval.BLEU(out_seq, ref_seq, bleu_n)
+
                 bleu_epoch.append(bleu_trn)
 
         bleu = sum(bleu_epoch) / len(bleu_epoch)
-        print('Bleu Score =', bleu)
+        print('Bleu_' + str(bleu_n) + ' Score =', bleu)
 
 
 
@@ -332,9 +335,11 @@ def main():
                 utils.convert2sequence(out[i], tar_idx2token)))
 
             ## BLEU score
-            bleu_score = eval.BLEU([utils.convert2sequence(out[i], tar_idx2token)],
-                                   [utils.convert2sequence(ref[i], tar_idx2token)[6:-6]])
-            print('Bleu Score =', bleu_score)
+            out_seq = utils.convert2sequence(out_trn[i], tar_idx2token)[: -6]
+            ref_seq = utils.convert2sequence(ref_trn[i], tar_idx2token)[6:-6]
+
+            bleu_score = eval.BLEU(out_seq, ref_seq, bleu_n)
+            print('Bleu_' + str(bleu_n) + ' Score =', bleu)
 
 
     with open(conf.save_path+"/encoderW", "wb") as f:

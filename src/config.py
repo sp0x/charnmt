@@ -33,6 +33,8 @@ class Config(object):
     word_level = True
     teaching_ratio = 0.5
 
+    bleu_n = 4
+
     debug_mode = True
     cuda = torch.cuda.is_available()
 
