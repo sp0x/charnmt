@@ -3,6 +3,39 @@ import torch.nn as nn
 from torch.autograd import Variable
 import torch.nn.functional as F
 
+import os
+import copy
+
+import config
+import utils
+from WordAttnNMT import Decoder, train, evaluate
+import eval
+
+
+class ResNet(nn.Module):
+
+    def __init__(self, in_size, hid_size):
+        super(ResNet, self).__init__()
+
+        self.fc1 = nn.Linear(in_size, hid_size)
+        self.fc2 = nn.Linear(hid_size, in_size)
+        self.bn = nn.BatchNorm2d(hid_size)
+
+    def forward(self, x, training):
+        if training:
+            noise = 0.2
+        else:
+            noise = 0
+
+        std = Variable(torch.randn(x.size())) * noise
+        if x.is_cuda:
+            std = std.cuda()
+
+        residue = self.fc1(F.relu(x + std))
+        residue = F.relu(residue).transpose(1,2).contiguous()
+        residue = self.bn(residue).transpose(1,2)
+        return x + self.fc2(residue)
+
 
 class Encoder(nn.Module):
     """
@@ -20,8 +53,8 @@ class Encoder(nn.Module):
             vocab_size, 
             dropout, 
             s, 
-            n_highway, 
-            n_rnn_layers):
+            n_highway=4, 
+            n_rnn_layers=1):
         super(Encoder, self).__init__()
         self.hid_dim = hid_dim
         self.s = s
@@ -38,9 +71,13 @@ class Encoder(nn.Module):
         # number of layers in highway network
         self.n_highway = n_highway
         highway_dim = sum(self.n_filters)
+        #for i in range(n_highway):
+        #    setattr(self, "highway_gate{}".format(i+1), nn.Linear(highway_dim, highway_dim))
+        #    setattr(self, "highway_layer{}".format(i+1), nn.Linear(highway_dim, highway_dim))
+
+        # ResNet
         for i in range(n_highway):
-            setattr(self, "highway_gate{}".format(i+1), nn.Linear(highway_dim, highway_dim))
-            setattr(self, "highway_layer{}".format(i+1), nn.Linear(highway_dim, highway_dim))
+            setattr(self, "resnet{}".format(i+1), ResNet(highway_dim, 400))
 
         # recurrent layer
         self.n_rnn_layers = n_rnn_layers
@@ -49,24 +86,19 @@ class Encoder(nn.Module):
 
         self._init_weights()
 
-        #
-        self.test_rnn = nn.GRU(src_emb, hid_dim, 1, batch_first=True, dropout=dropout, bidirectional=True)
-
 
     def _init_weights(self):
         initrange = 0.1
         self.embedding.weight.data.uniform_(-initrange, initrange)
 
 
-    def init_gru(self, batch_size):
+    def init_hidden(self, batch_size):
         return Variable(torch.zeros(self.n_rnn_layers*2, batch_size, self.hid_dim))
 
 
-    def forward(self, x, h, flag=True):
+    def forward(self, x, h, seq_len=None):
         # Embedding
-        x = self.embedding(x.long())
-        if flag:
-            return self.test_rnn(x, h)
+        x = self.embedding(x)
 
         # Convoluation
         x = torch.unsqueeze(x, 1)
@@ -76,7 +108,10 @@ class Encoder(nn.Module):
         x = self._max_pooling(x)
 
         # Highway network
-        x = self._highway_net(x)
+        #x = self._highway_net(x)
+
+        # ResNet
+        x = self._resnet(x)
 
         # Recurrent layer
         x, h = self._recurrent(x, h)
@@ -126,7 +161,7 @@ class Encoder(nn.Module):
 
     
     def _highway_net(self, x):
-        """
+        """@depreciated
         multi-layer highway network
 
         ----------
@@ -147,6 +182,21 @@ class Encoder(nn.Module):
         return y
 
 
+    def _resnet(self, x):
+        """
+        Multi-layer residual network
+
+        @parameters
+            same as highway network
+        """
+        y = x
+
+        for i in range(self.n_highway):
+            y = getattr(self, "resnet{}".format(i+1))(y, self.training)
+
+        return y
+
+
     def _recurrent(self, x, h):
         """
         Bi-RNN, using GRU in this setting
@@ -163,7 +213,7 @@ class Encoder(nn.Module):
         return self.rnn_encoder(x, h)
 
 
-class Decoder(nn.Module):
+class DecoderC(nn.Module):
     """
     Decoder of the character-level NMT model, with attention mechanism. Predict 
     next character given previous hidden state of decoder, last decoded character 
@@ -292,67 +342,156 @@ class Decoder(nn.Module):
         return x
 
 
-class CharNMT(nn.Module):
+def lr_schedule(t):
     """
-    char2char neural machine translation
-
-    ----------
-    @params
-        vocab_size: int, number of unique characters
-        max_len: int max. sequence length
-        src_emb: int, embedding dimension of character in source language
-        tar_emb: int, embedding dimension of character in target language
-        hid_dim: int, dimension of hidden state in RNN
-        dropout: float, dropout used in NMT neural network
-        s: int, stride used in convolutional neural network
-        n_highway: int, number of layers in highway network
-        n_rnn_encoder_layers: int, number of stacked layers in RNN encoder
-        n_rnn_decoder_layers: int, number of stacked layers in RNN decoder
-        decoder_layers: list of int, number of neurons in each decoding layer
-    ----------
+    learning rate schedule, use piecewise
     """
+    if t < 10:
+        return 0.01
 
-    def __init__(self, 
-            vocab_size, 
-            max_len=450,
-            src_emb=128, 
-            tar_emb=512,
-            hid_dim=300, 
-            dropout=0.5, 
-            s=5, 
-            n_highway=4, 
-            n_rnn_encoder_layers=1, 
-            n_rnn_decoder_layers=1, 
-            decoder_layers=[1024]):
-        super(CharNMT, self).__init__()
-        self.name = "CharNMT"
+    if t < 50:
+        return 0.001
 
-        self.encoder = Encoder(src_emb, hid_dim, vocab_size, dropout, 
-                s, n_highway, n_rnn_encoder_layers)
-
-        self.decoder = Decoder(tar_emb, hid_dim, vocab_size, hid_dim * 2, 
-                dropout, n_rnn_decoder_layers, decoder_layers)
+    return 0.0001
 
 
-    def forward(self, x, c, dec_h):
-        '''
-        encode, attention, decode
-        ----------
-        @params
-            x    :  previously generated characters
-            c    :  tensor, context-dependent vectors, with dimension 
-                    (batch_size, seq_len, feature)
-            dec_h:  tensor, hidden state at time t-1 in the decoding procedure, 
-                    with dimention (batch_size, hid_dim)
-            
-        @return
-            char at time t, hidden state in decoder at time t and attention 
-            weights
-        ----------
-        '''
-        return self.decoder(dec_h, x, c)
+def main():
+    conf = config.Config()
+    conf.word_level = False
+
+    # Load data
+    vocab, idx2char = utils.build_vocab(
+            [conf.train_path, conf.dev_path, conf.test_path], 
+            False)
+    print("vocabulary size = {}".format(len(vocab)))
+
+    train_source_seqs, train_target_seqs = utils.load_data(
+            conf.train_path, 
+            vocab, 
+            conf.train_pickle,
+            conf.max_seq_len, 
+            conf.reverse_source)
+
+    dev_source_seqs, dev_target_seqs = utils.load_data(
+            conf.dev_path, 
+            vocab, 
+            conf.dev_pickle,
+            conf.max_seq_len, 
+            conf.reverse_source)
+
+    print("Training set = {}\nValidation set = {}".format(
+        len(train_source_seqs), len(dev_source_seqs)))
+
+    # Define/Load models
+    if os.path.exists(conf.save_path+"/encoderC") and not conf.debug_mode:
+        encoder = torch.load(conf.save_path+"/encoderC")
+        decoder = torch.load(conf.save_path+"/decoderC")
+    else:
+        encoder = Encoder(
+                conf.source_emb, 
+                conf.hid_dim, 
+                len(vocab), 
+                conf.dropout, 
+                conf.stride)
+        decoder = Decoder(
+                conf.target_emb, 
+                conf.hid_dim, 
+                len(vocab), 
+                conf.dropout)
+
+    if conf.debug_mode:
+        train_source_seqs = train_source_seqs[:10]
+        train_target_seqs = train_target_seqs[:10]
+        dev_source_seqs = train_source_seqs
+        dev_target_seqs = train_target_seqs
+        test_source_seqs = train_source_seqs
+        test_target_seqs = train_target_seqs
+    else:
+        # split large corpus to fit memory
+        size = 70000
+        n = 0 % (int(np.ceil(len(train_source_seqs)/size)))
+        start = n * size
+        train_source_seqs = train_source_seqs[start:start+size]
+        train_target_seqs = train_target_seqs[start:start+size]
+
+    if conf.cuda:
+        encoder.cuda()
+        decoder.cuda()
+
+    lr = conf.lr
+    bleu_n = conf.bleu_n
+    best_bleu = -1
+    best_encoder = None
+    best_decoder = None
+
+    for epoch in range(conf.epochs):
+        lr = lr_schedule(epoch)
+        print("*** Epoch [{:5d}] lr = {} ***".format(epoch, lr))
+
+        train_loss = train(train_source_seqs, train_target_seqs, 
+                encoder, decoder, lr, conf)
+        print("Training loss: {:5.6f}".format(train_loss))
+
+        ## BLEU score
+        bleu_epoch = []
+        for j, (src_trn, ref_trn, out_trn) in enumerate(evaluate(dev_source_seqs, dev_target_seqs,
+                                                       encoder, decoder, conf)):
+            for i in range(len(src_trn)):
+
+                out_seq = utils.convert2sequence(out_trn[i], idx2char)[: -6]
+                ref_seq = utils.convert2sequence(ref_trn[i], idx2char)[6:-6]
+
+                bleu_trn = eval.BLEU(out_seq, ref_seq, bleu_n)
+
+                bleu_epoch.append(bleu_trn)
+
+        bleu = sum(bleu_epoch) / len(bleu_epoch)
+        print('Bleu_' + str(bleu_n) + ' Score =', bleu)
+
+        if bleu > best_bleu:
+            best_bleu = bleu
+            best_encoder = copy.deepcopy(encoder)
+            best_decoder = copy.deepcopy(decoder)
+            torch.save(encoder, conf.save_path+"/encoderC")
+            torch.save(decoder, conf.save_path+"/decoderC")
+
+    if not conf.debug_mode:
+        test_source_seqs, test_target_seqs = utils.load_data(
+                conf.test_path, 
+                vocab, 
+                conf.test_pickle,
+                conf.max_seq_len, 
+                conf.reverse_source)
+
+        del train_source_seqs, train_target_seqs
+        del dev_source_seqs, dev_target_seqs
+
+    bleus = []
+    for _, (src, ref, out) in enumerate(evaluate(
+        test_source_seqs, test_target_seqs, best_encoder, best_decoder, conf)):
+        for i in range(len(src)):
+            ## BLEU score
+            out_seq = utils.convert2sequence(out_trn[i], idx2char)[: -6]
+            ref_seq = utils.convert2sequence(ref_trn[i], idx2char)[6:-6]
+
+            bleu = eval.BLEU(out_seq, ref_seq, bleu_n)
+
+            print("Source\t{}".format(
+                utils.convert2sequence(src[i], idx2char)))
+            print("Ref\t{}".format(ref_seq))
+            print("Output\t{}\n".format(out_seq))
+            print('Bleu_' + str(bleu_n) + ' Score =', bleu)
+
+            bleus.append(bleu)
+
+    print('average BLEU score on test set = {:2.6f}'.format(
+        sum(bleus) / len(bleus)))
+
+    #with open(conf.save_path+"/encoderC", "wb") as f:
+    #    torch.save(encoder, f)
+    #with open(conf.save_path+"/decoderC", "wb") as f:
+    #    torch.save(decoder, f)
 
 
-    def zero_grads(self):
-        self.encoder.zero_grad()
-        self.decoder.zero_grad()
+if __name__ == "__main__":
+    main()

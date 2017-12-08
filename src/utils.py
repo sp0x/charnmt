@@ -6,13 +6,13 @@ import copy
 import nltk
 
 
-def build_char_vocab(filenames, word=True):
+def build_vocab(filenames, word=True):
     """
-    Build character vocabulary from a file
+    Build vocabulary from a list of files
 
     ----------
     @params
-        filename: string, input filename
+        filenames: list of string, input filenames
 
     @return
         vocab: dict, pairs of char tokens and their indices

@@ -26,7 +26,7 @@ class Config(object):
     dropout = 0.5
     
     epochs = 100
-    batch_size = 32
+    batch_size = 1
     lr = 0.001
     log_interval = 50
     reverse_source = False

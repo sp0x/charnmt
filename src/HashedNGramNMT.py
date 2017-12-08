@@ -9,6 +9,7 @@ from torch.nn.utils.rnn import pad_packed_sequence, pack_padded_sequence
 
 import os
 import pickle
+import copy
 
 import utils
 import eval
@@ -107,7 +108,7 @@ def main():
         src_idx2token = pickle.load(open(conf.data_path + "/src_idx2token.p", "rb"))
         tar_idx2token = pickle.load(open(conf.data_path + "/tar_idx2token.p", "rb"))
     else:
-        src_vocab, src_idx2token, tar_vocab, tar_idx2token = utils.build_char_vocab(
+        src_vocab, src_idx2token, tar_vocab, tar_idx2token = utils.build_vocab(
                 [conf.train_path, conf.dev_path, conf.test_path], True)
         pickle.dump(src_vocab, open(conf.data_path + "/src_vocab.p", "wb"))
         pickle.dump(tar_vocab, open(conf.data_path + "/tar_vocab.p", "wb"))
@@ -169,6 +170,11 @@ def main():
         decoder.cuda()
 
     lr = conf.lr
+    bleu_n = conf.bleu_n
+    best_bleu = -1
+    best_encoder = None
+    best_decoder = None
+
     for epoch in range(conf.epochs):
         print("*** Epoch [{:5d}] lr = {} ***".format(epoch, lr))
 
@@ -182,15 +188,22 @@ def main():
                                                        encoder, decoder, conf)):
             for i in range(len(src_trn)):
 
-                bleu_trn = eval.BLEU([utils.convert2sequence(out_trn[i], tar_idx2token)],
-                                     [utils.convert2sequence(ref_trn[i], tar_idx2token)[6:-6]])
-                # print('Bleu Score =', bleu_trn)
+                out_seq = utils.convert2sequence(out_trn[i], tar_idx2token)[: -6]
+                ref_seq = utils.convert2sequence(ref_trn[i], tar_idx2token)[6:-6]
+
+                bleu_trn = eval.BLEU(out_seq, ref_seq, bleu_n)
+
                 bleu_epoch.append(bleu_trn)
 
         bleu = sum(bleu_epoch) / len(bleu_epoch)
-        print('Bleu Score =', bleu)
+        print('Bleu_' + str(bleu_n) + ' Score =', bleu)
 
-
+        if bleu > best_bleu:
+            best_bleu = bleu
+            best_encoder = copy.deepcopy(encoder)
+            best_decoder = copy.deepcopy(decoder)
+            torch.save(encoder, conf.save_path+"/encoderH")
+            torch.save(decoder, conf.save_path+"/decoderH")
 
     if not conf.debug_mode:
         test_source_seqs, test_target_seqs = utils.load_data(
@@ -204,27 +217,31 @@ def main():
         del dev_source_seqs, dev_target_seqs
         del src_vocab, tar_vocab
 
+    bleus = []
     for _, (src, ref, out) in enumerate(evaluate(
-        test_source_seqs, test_target_seqs, encoder, decoder, conf)):
+        test_source_seqs, test_target_seqs, best_encoder, best_decoder, conf)):
         for i in range(len(src)):
+            ## BLEU score
+            out_seq = utils.convert2sequence(out_trn[i], tar_idx2token)[: -6]
+            ref_seq = utils.convert2sequence(ref_trn[i], tar_idx2token)[6:-6]
+
+            bleu = eval.BLEU(out_seq, ref_seq, bleu_n)
+
             print("Source\t{}".format(
                 utils.convert2sequence(src[i], src_idx2token)))
-            print("Ref\t{}".format(
-                utils.convert2sequence(ref[i], tar_idx2token)))
-            print("Output\t{}\n".format(
-                utils.convert2sequence(out[i], tar_idx2token)))
+            print("Ref\t{}".format(ref_seq))
+            print("Output\t{}\n".format(out_seq))
+            print('Bleu_' + str(bleu_n) + ' Score =', bleu)
 
-            ## BLEU score
-            bleu_score = eval.BLEU([utils.convert2sequence(out[i], tar_idx2token)],
-                                   [utils.convert2sequence(ref[i], tar_idx2token)[6:-6]])
-            print('Bleu Score =', bleu_score)
+            bleus.append(bleu)
 
+    print('average BLEU score on test set = {:2.6f}'.format(
+        sum(bleus) / len(bleus)))
 
-
-    with open(conf.save_path+"/encoderH", "wb") as f:
-        torch.save(encoder, f)
-    with open(conf.save_path+"/decoderH", "wb") as f:
-        torch.save(decoder, f)
+    #with open(conf.save_path+"/encoderH", "wb") as f:
+    #    torch.save(encoder, f)
+    #with open(conf.save_path+"/decoderH", "wb") as f:
+    #    torch.save(decoder, f)
 
 
 if __name__ == "__main__":
