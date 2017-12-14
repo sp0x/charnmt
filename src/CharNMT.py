@@ -5,6 +5,7 @@ import torch.nn.functional as F
 
 import os
 import copy
+import numpy as np
 
 import config
 import utils
@@ -439,8 +440,8 @@ def main():
                                                        encoder, decoder, conf)):
             for i in range(len(src_trn)):
 
-                out_seq = utils.convert2sequence(out_trn[i], idx2char, "")[: -6]
-                ref_seq = utils.convert2sequence(ref_trn[i], idx2char, "")[6:-6]
+                out_seq = utils.convert2sequence(out_trn[i], idx2char, "")[: -5]
+                ref_seq = utils.convert2sequence(ref_trn[i], idx2char, "")[5:-5]
 
                 bleu_trn = eval.BLEU(out_seq, ref_seq, bleu_n)
 
@@ -488,9 +489,9 @@ def main():
     print('average BLEU score on test set = {:2.6f}'.format(
         sum(bleus) / len(bleus)))
 
-    #with open(conf.save_path+"/encoderC", "wb") as f:
+    # with open(conf.save_path+"/encoderC", "wb") as f:
     #    torch.save(encoder, f)
-    #with open(conf.save_path+"/decoderC", "wb") as f:
+    # with open(conf.save_path+"/decoderC", "wb") as f:
     #    torch.save(decoder, f)
 
 

@@ -9,15 +9,15 @@ class Config(object):
     dev_path = data_path + "/dev.txt"
     test_path = data_path + "/test.txt"
     
-    train_pickle = data_path + "/train_{}.p"
-    dev_pickle = data_path + "/dev_{}.p"
-    test_pickle = data_path + "/test_{}.p"
+    train_pickle = data_path + "/small_train_{}.p"
+    dev_pickle = data_path + "/small_dev_{}.p"
+    test_pickle = data_path + "/small_test_{}.p"
 
     save_path = "saver"
     if not os.path.exists(save_path):
         os.mkdir(save_path)
 
-    max_seq_len = 450
+    max_seq_len = 200
     source_emb = 128
     target_emb = 512
     n_gram_size = 1001
@@ -25,7 +25,7 @@ class Config(object):
     stride = 1
     dropout = 0.5
     
-    epochs = 100
+    epochs = 20
     batch_size = 1
     lr = 0.001
     log_interval = 50
@@ -35,6 +35,6 @@ class Config(object):
 
     bleu_n = 4
 
-    debug_mode = True
+    debug_mode = False
     cuda = torch.cuda.is_available()
 
