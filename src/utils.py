@@ -124,7 +124,7 @@ def load_data(file_path, vocab, pickle_path, max_len, reverse_source):
             source = source[:-5].strip().lower()
             target = target[:-5].strip().lower()
 
-            if len(source) <= max_len:
+            if len(source) <= max_len and len(source) >= max_len // 2:
 
                 if type(vocab) == list:
                     for w in nltk.word_tokenize(source):
