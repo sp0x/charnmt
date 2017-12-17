@@ -1,8 +1,10 @@
 # Character Level Neural Machine Translation
 
+### ![alt text](https://ddqt2avvbpaxu.cloudfront.net/cdn/v1/nyu-mac/marketing/favicon.ico) NYU CDS DS-GA-1011  
+### Natural Language Processing with Representation Learning 
 
-This is a [Pytorch](https://github.com/pytorch/pytorch)
-implementation of [Char-NMT](https://arxiv.org/pdf/1610.03017.pdf),
-a Character Level neural machine translation system. 
+A [Pytorch](https://github.com/pytorch/pytorch)
+implementation of ["Fully Character-Level Neural Machine Translation without Explicit Segmentation", 2016](https://arxiv.org/abs/1610.03017),
+a Character Level neural machine translation system.     
 
-<center style="padding: 40px"><img width="70%" src="https://ai2-s2-public.s3.amazonaws.com/figures/2017-08-08/7a6ec60f6beb09714be39d061b56bd151e9f528e/4-Figure1-1.png" /></center>
+![model](http://i.imgur.com/C2TJGXw.png)
