@@ -126,7 +126,7 @@ def train(source, target, encoder, decoder, lr, conf):
             x = x.cuda()
             y = y.cuda()
             enc_h = enc_h.cuda()
-
+        print(x.size())
         encoder_out, enc_h = encoder(x, enc_h, x_len-1)
         # use last forward hidden state in encoder
         dec_h = enc_h[:decoder.n_layers]
