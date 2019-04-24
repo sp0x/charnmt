@@ -31,10 +31,10 @@ class ResNet(nn.Module):
         std = Variable(torch.randn(x.size())) * noise
         if x.is_cuda:
             std = std.cuda()
-
+        print(x.size())
         residue = self.fc1(F.relu(x + std))
         residue = F.relu(residue).transpose(1,2).contiguous()
-        residue = residue[0]
+        residue = [residue]
         print(residue)
         residue = self.bn(residue).transpose(1,2)
         return x + self.fc2(residue)
