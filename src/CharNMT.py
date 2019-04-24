@@ -34,6 +34,7 @@ class ResNet(nn.Module):
 
         residue = self.fc1(F.relu(x + std))
         residue = F.relu(residue).transpose(1,2).contiguous()
+        print(residue)
         residue = self.bn(residue).transpose(1,2)
         return x + self.fc2(residue)
 
